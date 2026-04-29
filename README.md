@@ -1,232 +1,234 @@
-# OneDrive AI Assistant with Gemini Integration
+# DocuMind — AI Document Assistant
 
-A comprehensive web application that allows you to interact with your OneDrive files using Google's Gemini AI. This application provides file selection, editing, uploading, and AI-powered analysis capabilities.
+A clean, modern RAG-powered chat interface for querying your documents with Google Gemini AI. Upload local files or import from OneDrive, then ask questions and get grounded, sourced answers.
 
-## 🚀 Features
+![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
+![Flask](https://img.shields.io/badge/Flask-3.0-lightgrey)
+![License](https://img.shields.io/badge/License-MIT-green)
 
-### Core Functionality
-- **OneDrive Integration**: Full access to your OneDrive files and folders
-- **AI-Powered Analysis**: Use Google Gemini AI to analyze and answer questions about your files
-- **File Selection**: Multi-select files and folders for targeted AI analysis
-- **Real-time Chat**: Interactive chat interface with AI assistant
+## Features
 
-### File Operations
-- ✅ **View Files**: Browse your OneDrive directory structure
-- ✅ **Select Files**: Multi-select files for AI analysis
-- ✅ **File Search**: AI-powered search through file contents
+- **ChatGPT-style UI** — Dark sidebar for chat history, clean message bubbles, responsive design
+- **RAG-powered answers** — Hybrid search (ChromaDB HNSW + BM25 with Reciprocal Rank Fusion) over your documents
+- **Local file upload** — PDF, DOCX, XLSX, CSV, TXT with concurrent upload and indexing
+- **OneDrive import** — Browse folders, select files, and import directly from Microsoft OneDrive via OAuth2
+- **Multi-session chat** — Create, switch, and delete conversations; history persists across reloads
+- **Source citations** — Every answer shows clickable source chips with the exact passage used
+- **Automatic retry** — Gemini 503 "high demand" errors are retried with exponential backoff
+- **Multi-user scoped** — Each user gets isolated ChromaDB collections and SQLite records
 
-### AI Capabilities
-- **Content Analysis**: Analyze PDFs, Word documents, Excel files, and more
-- **Data Extraction**: Extract insights from spreadsheets and CSV files
-- **Document Summarization**: Get summaries of long documents
-- **Question Answering**: Ask specific questions about your files
-- **Contextual Responses**: AI responses based on selected files only
+## Architecture
 
-## 🛠️ Installation
+```
+┌─────────────────────────────────────────────┐
+│                  Browser                     │
+│  chat.html + chat.js + chat.css (dark UI)   │
+└──────────────┬──────────────────────────────┘
+               │  HTTP / JSON
+┌──────────────▼──────────────────────────────┐
+│                 Flask App                    │
+│  ┌───────────┐  ┌──────────┐  ┌──────────┐  │
+│  │ /api/chat │  │ /api/    │  │ /onedrive│  │
+│  │  (RAG)    │  │ files    │  │  (OAuth) │  │
+│  └─────┬─────┘  └────┬─────┘  └────┬─────┘  │
+│        │              │              │        │
+│  ┌─────▼──────────────▼──────────────▼─────┐  │
+│  │           Services Layer                │  │
+│  │  rag.py  ·  gemini.py  ·  onedrive.py   │  │
+│  │  persistence.py  ·  vector_store.py     │  │
+│  │  file_parser.py                         │  │
+│  └──────────────────┬──────────────────────┘  │
+└─────────────────────┼─────────────────────────┘
+                      │
+        ┌─────────────┼─────────────┐
+        ▼             ▼             ▼
+   ┌──────────┐  ┌──────────┐  ┌───────────┐
+   │ SQLite   │  │ ChromaDB │  │ MS Graph  │
+   │ (users,  │  │ (vectors │  │ (OneDrive │
+   │ sessions,│  │  + BM25) │  │  files)   │
+   │ messages)│  │          │  │           │
+   └──────────┘  └──────────┘  └───────────┘
+```
 
-### Prerequisites
-- Python 3.8 or higher
-- Microsoft Azure AD application
-- Google Gemini API key
-- OneDrive account
+## Quick Start
 
-### Setup
+### 1. Prerequisites
 
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd oneDrive
-   ```
+- Python 3.10+
+- Google Gemini API key ([get one here](https://aistudio.google.com/app/apikey))
+- (Optional) Azure AD app for OneDrive integration
 
-2. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
+### 2. Install
 
-3. **Configure environment variables**
-   Create a `.env` file in the root directory:
-   ```env
-   # Azure AD Configuration
-   AZURE_CLIENT_ID=your_azure_client_id
-   AZURE_CLIENT_SECRET=your_azure_client_secret
-   AZURE_TENANT_ID=your_azure_tenant_id
-   AZURE_REDIRECT_URI=http://localhost:5000/auth/callback
+```bash
+git clone <repository-url>
+cd OneDrive_Chatbot
+pip install -r requirements.txt
+```
 
-   # Gemini AI Configuration
-   GEMINI_API_KEY=your_gemini_api_key
+### 3. Configure
 
-   # Flask Configuration
-   FLASK_SECRET_KEY=your_secret_key
-   ```
+Copy the example env file and fill in your keys:
 
-4. **Run the application**
-   ```bash
-   python run.py
-   ```
+```bash
+cp .env.example .env
+```
 
-5. **Access the application**
-   Open your browser and go to `http://localhost:5000`
+```env
+# Required — Gemini AI
+GEMINI_API_KEY=your_gemini_api_key
 
-## 🔧 Configuration
+# Required — Flask
+FLASK_SECRET_KEY=change-me-to-a-random-secret
 
-### Azure AD Setup
-1. Go to [Azure Portal](https://portal.azure.com)
-2. Navigate to "Azure Active Directory" > "App registrations"
-3. Click "New registration"
-4. Configure the application:
-   - Name: "OneDrive AI Assistant"
-   - Supported account types: "Accounts in this organizational directory only"
-   - Redirect URI: `http://localhost:5000/auth/callback`
-5. Note down the Application (client) ID and Directory (tenant) ID
-6. Go to "Certificates & secrets" and create a new client secret
-7. Go to "API permissions" and add:
-   - Microsoft Graph > Files.Read
-   - Microsoft Graph > Files.Read.All
-   - Microsoft Graph > User.Read
-   - Microsoft Graph > Sites.Read.All
+# Optional — OneDrive (leave out if you only need local files)
+AZURE_CLIENT_ID=your_azure_client_id
+AZURE_CLIENT_SECRET=your_azure_client_secret
+AZURE_TENANT_ID=common
+AZURE_REDIRECT_URI=http://localhost:5000/auth/callback
 
-### Gemini API Setup
-1. Go to [Google AI Studio](https://aistudio.google.com)
-2. Create a new API key
-3. Add the key to your `.env` file
+# Optional
+PORT=5000
+```
 
-## 📱 Usage
+### 4. Run
 
-### Getting Started
-1. **Login**: Click "Sign in with Microsoft" to authenticate
-2. **Browse Files**: Your OneDrive files will appear in the left sidebar
-3. **Select Files**: Click on files to select them for AI analysis
-4. **Ask Questions**: Type questions in the chat interface
+```bash
+python run.py
+```
 
-### File Operations
+Open **http://localhost:5000** and log in with one of the demo accounts:
 
-#### Selecting Files
-- **Single Selection**: Click on a file to select it
-- **Multi-Selection**: Use checkboxes to select multiple files
-- **Select All**: Use the "Select All" button to select all visible files
-- **Clear Selection**: Use the "Clear" button to deselect all files
+| Email | Password |
+|---|---|
+| `admin@documind.ai` | `demo1234` |
+| `user@example.com` | `password123` |
 
+Add more users in `app/config.py` under `AuthConfig.USERS`.
 
-#### AI Analysis
-- Select one or more files
-- Ask questions like:
-  - "What is this document about?"
-  - "Summarize the key points"
-  - "Find all mentions of 'project management'"
-  - "What data is in this spreadsheet?"
+## Usage
 
-## 🎨 Interface Overview
+### Uploading Files
 
-### Sidebar
-- **User Info**: Shows your name and connection status
-- **Selection Panel**: Displays selected files count and list
-- **File Browser**: Hierarchical view of your OneDrive files
-- **File Actions**: Buttons for select all, clear, view mode, and upload
+1. Click the **paperclip** icon in the composer (or the **Files** button on the top-right)
+2. Select PDF, DOCX, XLSX, CSV, or TXT files
+3. Files are parsed, chunked, embedded, and stored in ChromaDB automatically
+4. Once indexed, click a file in the Files panel to select it for your next query
 
-### Main Content
-- **Chat Header**: Shows AI assistant title and description
-- **Chat Messages**: Conversation history with the AI
-- **Input Area**: Text input with send button and suggestions
-- **Suggestions**: Quick-start question suggestions
+### Importing from OneDrive
 
+1. Open the **Files** panel and switch to the **OneDrive** tab
+2. Click **Connect** to sign in with Microsoft
+3. Browse folders, select files, and click **Import Selected**
+4. Imported files are indexed the same way as local uploads
 
-## 🔒 Security
+### Asking Questions
 
-- **OAuth 2.0**: Secure Microsoft authentication
-- **Token Management**: Automatic token refresh
-- **Session Security**: Secure session management
-- **API Security**: All API calls use proper authentication
+- Type a question in the composer and press Enter
+- Answers are grounded in your indexed documents with source citations
+- Click any **source chip** below an answer to see the exact passage
+- Use the quick-prompt chips on the welcome screen for common tasks
+- Selected files are prioritized; if none are selected, all indexed files are searched
 
-## 📊 Supported File Types
+## Configuration
 
-### Text Files
-- `.txt` - Plain text files
-- `.md` - Markdown files
-- `.json` - JSON data files
-- `.xml` - XML files
+### RAG Settings (`app/config.py`)
 
-### Documents
-- `.pdf` - PDF documents (text extraction)
-- `.docx` - Microsoft Word documents
-- `.doc` - Legacy Word documents
+| Setting | Default | Description |
+|---|---|---|
+| `CHUNK_SIZE` | 800 | Characters per document chunk |
+| `CHUNK_OVERLAP` | 150 | Overlap between consecutive chunks |
+| `TOP_K` | 6 | Number of chunks retrieved per query |
+| `RRF_K` | 60 | RRF damping factor for hybrid ranking |
 
-### Spreadsheets
-- `.xlsx` - Microsoft Excel files
-- `.xls` - Legacy Excel files
-- `.csv` - Comma-separated values
+### Gemini Model
 
-### Presentations
-- `.pptx` - Microsoft PowerPoint presentations
-- `.ppt` - Legacy PowerPoint presentations
+Uses `gemini-2.5-flash` by default. Change `GeminiConfig.MODEL` in `app/config.py` to use a different model.
 
-### Images
-- `.jpg`, `.jpeg` - JPEG images
-- `.png` - PNG images
-- `.gif` - GIF images
+### Gemini 503 Retry
 
-## 🚨 Troubleshooting
+When Google's API returns a 503 ("high demand") error, the backend retries up to 3 times with exponential backoff (2s, 4s, 8s + jitter). If all retries fail, it falls back to showing the top retrieved passage directly.
 
-### Common Issues
+## API Endpoints
 
-#### Authentication Problems
-- **Issue**: "Authentication failed"
-- **Solution**: Check your Azure AD configuration and ensure redirect URI matches exactly
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/api/chat/session` | Get current session messages |
+| `DELETE` | `/api/chat/session` | Clear current session |
+| `GET` | `/api/chat/sessions` | List all sessions |
+| `POST` | `/api/chat/sessions` | Create new session |
+| `DELETE` | `/api/chat/sessions/<id>` | Delete a session |
+| `POST` | `/api/chat` | Send a message (RAG query) |
+| `GET` | `/api/files` | List indexed files |
+| `POST` | `/api/upload` | Upload and index a file |
+| `POST` | `/api/remove` | Remove a file |
+| `GET` | `/api/onedrive/status` | OneDrive connection status |
+| `GET` | `/api/onedrive/files` | List OneDrive folder contents |
+| `POST` | `/api/onedrive/import` | Import selected OneDrive files |
+| `GET` | `/onedrive/connect` | Start OneDrive OAuth flow |
+| `POST` | `/onedrive/disconnect` | Disconnect OneDrive |
 
-#### File Access Issues
-- **Issue**: "Cannot access OneDrive"
-- **Solution**: Verify API permissions in Azure AD and ensure Files.Read scope is granted
+## Project Structure
 
-#### Gemini API Issues
-- **Issue**: "Gemini AI is not available"
-- **Solution**: Check your Gemini API key and ensure it's valid
+```
+OneDrive_Chatbot/
+├── app/
+│   ├── __init__.py            # Flask app factory
+│   ├── config.py              # All configuration classes
+│   ├── auth_helpers.py        # Login decorator
+│   ├── routes/
+│   │   ├── auth.py            # Login / logout
+│   │   ├── chat.py            # Chat API, RAG pipeline
+│   │   ├── files.py           # Upload / remove endpoints
+│   │   └── onedrive.py        # OneDrive OAuth + import
+│   └── services/
+│       ├── file_parser.py     # PDF, DOCX, XLSX, CSV, TXT extraction
+│       ├── gemini.py          # Gemini API client with retry
+│       ├── onedrive.py        # MS Graph API helpers
+│       ├── persistence.py     # SQLite schema and queries
+│       ├── rag.py             # Chunking, indexing, prompt building
+│       └── vector_store.py    # ChromaDB wrapper (hybrid search)
+├── static/
+│   ├── css/chat.css           # Dark ChatGPT-style theme
+│   └── js/chat.js             # Frontend state and DOM logic
+├── templates/
+│   └── chat.html              # Single-page UI
+├── chroma_db/                 # Persistent vector store (auto-created)
+├── documind.sqlite3           # SQLite database (auto-created)
+├── flask_session/             # Server-side session store
+├── requirements.txt
+├── run.py
+└── .env
+```
 
-#### File Upload Issues
-- **Issue**: "Upload failed"
-- **Solution**: Check file size limits and ensure you have write permissions
+## Supported File Types
 
-### Debug Mode
-Access `/debug` endpoint to see connection status and diagnostic information.
+| Type | Extensions | Parser |
+|---|---|---|
+| PDF | `.pdf` | PyPDF2 |
+| Word | `.docx`, `.doc` | python-docx |
+| Excel | `.xlsx`, `.xls`, `.csv` | pandas / openpyxl / xlrd |
+| Text | `.txt` | Direct read |
 
-## 🔄 API Endpoints
+## Troubleshooting
 
-### Authentication
-- `GET /` - Home page
-- `GET /login` - Microsoft OAuth login
-- `GET /auth/callback` - OAuth callback
-- `GET /logout` - Logout
+**"Gemini temporarily unavailable"** — The API is experiencing high demand. The backend retries automatically; if all retries fail you'll see the top retrieved passage as a fallback.
 
-### File Operations
-- `GET /api/directory` - Get directory structure
+**Files not showing after refresh** — The Files panel may need a manual refresh. Click the **Refresh** button in the Documents tab.
 
-### AI Chat
-- `POST /api/chat` - Send message to AI with selected files
+**OneDrive import fails** — Check that your Azure AD app has `Files.Read` and `Files.Read.All` permissions granted, and that the redirect URI matches exactly.
 
-## 🤝 Contributing
+**"No documents indexed"** — Upload at least one file before asking questions. Answers require indexed document chunks.
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Test thoroughly
-5. Submit a pull request
+## Tech Stack
 
-## 📄 License
+- **Backend**: Flask, SQLite, ChromaDB
+- **AI**: Google Gemini (via `google-genai`)
+- **Vector Search**: ChromaDB hybrid (HNSW dense + BM25 sparse + RRF)
+- **Embeddings**: `sentence-transformers` (local, no external API)
+- **OneDrive**: MSAL + Microsoft Graph API
+- **Frontend**: Vanilla JS, Marked.js, DOMPurify, Font Awesome
 
-This project is licensed under the MIT License - see the LICENSE file for details.
+## License
 
-## 🙏 Acknowledgments
-
-- Microsoft Graph API for OneDrive integration
-- Google Gemini AI for natural language processing
-- Flask framework for the web application
-- Font Awesome for icons
-
-## 📞 Support
-
-For support and questions:
-- Create an issue in the repository
-- Check the troubleshooting section
-- Review the API documentation
-
----
-
-**Note**: This application requires proper Azure AD and Gemini API setup. Make sure to follow the configuration steps carefully for the application to work correctly.
+MIT
