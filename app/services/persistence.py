@@ -1,0 +1,375 @@
+import json
+import os
+import sqlite3
+import time
+import uuid
+
+
+DB_PATH = os.getenv("APP_DB_PATH", "./documind.sqlite3")
+
+
+def _ensure_db_dir():
+    db_dir = os.path.dirname(os.path.abspath(DB_PATH))
+    os.makedirs(db_dir, exist_ok=True)
+
+
+def _connect():
+    _ensure_db_dir()
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
+    return conn
+
+
+def init_db():
+    with _connect() as conn:
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS documents (
+                file_id TEXT PRIMARY KEY,
+                user_key TEXT NOT NULL,
+                name TEXT NOT NULL,
+                source_name TEXT NOT NULL,
+                size INTEGER NOT NULL,
+                chunks INTEGER NOT NULL,
+                uploaded_at REAL NOT NULL,
+                source TEXT NOT NULL,
+                source_ref TEXT NOT NULL DEFAULT ''
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_documents_user_key
+            ON documents(user_key, uploaded_at DESC);
+
+            CREATE INDEX IF NOT EXISTS idx_documents_source_ref
+            ON documents(user_key, source, source_ref);
+
+            CREATE TABLE IF NOT EXISTS chat_sessions (
+                session_id TEXT PRIMARY KEY,
+                user_key TEXT NOT NULL,
+                title TEXT NOT NULL,
+                created_at REAL NOT NULL,
+                updated_at REAL NOT NULL
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_chat_sessions_user_key
+            ON chat_sessions(user_key, updated_at DESC);
+
+            CREATE TABLE IF NOT EXISTS chat_messages (
+                message_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                session_id TEXT NOT NULL,
+                role TEXT NOT NULL,
+                content TEXT NOT NULL,
+                sources_json TEXT NOT NULL DEFAULT '[]',
+                created_at REAL NOT NULL,
+                FOREIGN KEY(session_id) REFERENCES chat_sessions(session_id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_chat_messages_session
+            ON chat_messages(session_id, created_at ASC, message_id ASC);
+            """
+        )
+
+
+def list_documents(user_key: str) -> dict:
+    with _connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT file_id, name, source_name, size, chunks, uploaded_at, source, source_ref
+            FROM documents
+            WHERE user_key = ?
+            ORDER BY uploaded_at DESC
+            """,
+            (user_key,),
+        ).fetchall()
+
+    return {
+        row["file_id"]: {
+            "name": row["name"],
+            "source_name": row["source_name"],
+            "size": row["size"],
+            "chunks": row["chunks"],
+            "uploaded_at": row["uploaded_at"],
+            "source": row["source"],
+            "source_ref": row["source_ref"],
+        }
+        for row in rows
+    }
+
+
+def save_document(user_key: str, file_id: str, entry: dict):
+    with _connect() as conn:
+        conn.execute(
+            """
+            INSERT OR REPLACE INTO documents
+            (file_id, user_key, name, source_name, size, chunks, uploaded_at, source, source_ref)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                file_id,
+                user_key,
+                entry["name"],
+                entry["source_name"],
+                entry["size"],
+                entry["chunks"],
+                entry["uploaded_at"],
+                entry["source"],
+                entry.get("source_ref", ""),
+            ),
+        )
+
+
+def get_document_by_source_ref(
+    user_key: str, source_ref: str, source: str | None = None
+) -> dict | None:
+    if not source_ref:
+        return None
+
+    query = """
+        SELECT file_id, name, source_name, size, chunks, uploaded_at, source, source_ref
+        FROM documents
+        WHERE user_key = ? AND source_ref = ?
+    """
+    params: tuple = (user_key, source_ref)
+
+    if source is not None:
+        query += " AND source = ?"
+        params = (user_key, source_ref, source)
+
+    query += " ORDER BY uploaded_at DESC LIMIT 1"
+
+    with _connect() as conn:
+        row = conn.execute(query, params).fetchone()
+
+    if not row:
+        return None
+
+    return {
+        "file_id": row["file_id"],
+        "name": row["name"],
+        "source_name": row["source_name"],
+        "size": row["size"],
+        "chunks": row["chunks"],
+        "uploaded_at": row["uploaded_at"],
+        "source": row["source"],
+        "source_ref": row["source_ref"],
+    }
+
+
+def delete_document(user_key: str, file_id: str) -> bool:
+    with _connect() as conn:
+        cur = conn.execute(
+            "DELETE FROM documents WHERE user_key = ? AND file_id = ?",
+            (user_key, file_id),
+        )
+        return cur.rowcount > 0
+
+
+def delete_all_documents(user_key: str):
+    with _connect() as conn:
+        conn.execute("DELETE FROM documents WHERE user_key = ?", (user_key,))
+
+
+DEFAULT_CHAT_TITLE = "New Chat"
+
+
+def _row_to_session(row) -> dict:
+    return {
+        "session_id": row["session_id"],
+        "title": row["title"],
+        "created_at": row["created_at"],
+        "updated_at": row["updated_at"],
+        "message_count": row["message_count"] if "message_count" in row.keys() else 0,
+    }
+
+
+def get_chat_session(user_key: str, session_id: str) -> dict | None:
+    with _connect() as conn:
+        row = conn.execute(
+            """
+            SELECT s.session_id, s.title, s.created_at, s.updated_at, COUNT(m.message_id) AS message_count
+            FROM chat_sessions s
+            LEFT JOIN chat_messages m ON m.session_id = s.session_id
+            WHERE s.user_key = ? AND s.session_id = ?
+            GROUP BY s.session_id, s.title, s.created_at, s.updated_at
+            """,
+            (user_key, session_id),
+        ).fetchone()
+
+    return _row_to_session(row) if row else None
+
+
+def list_chat_sessions(user_key: str) -> list:
+    with _connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT s.session_id, s.title, s.created_at, s.updated_at, COUNT(m.message_id) AS message_count
+            FROM chat_sessions s
+            LEFT JOIN chat_messages m ON m.session_id = s.session_id
+            WHERE s.user_key = ?
+            GROUP BY s.session_id, s.title, s.created_at, s.updated_at
+            ORDER BY s.updated_at DESC, s.created_at DESC
+            """,
+            (user_key,),
+        ).fetchall()
+
+    return [_row_to_session(row) for row in rows]
+
+
+def create_chat_session(user_key: str, title: str = DEFAULT_CHAT_TITLE) -> dict:
+    now = time.time()
+    session_id = uuid.uuid4().hex
+    with _connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO chat_sessions (session_id, user_key, title, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (session_id, user_key, title, now, now),
+        )
+    return {
+        "session_id": session_id,
+        "title": title,
+        "created_at": now,
+        "updated_at": now,
+        "message_count": 0,
+    }
+
+
+def update_chat_session_title(user_key: str, session_id: str, title: str) -> dict | None:
+    title = (title or "").strip() or DEFAULT_CHAT_TITLE
+    now = time.time()
+    with _connect() as conn:
+        cur = conn.execute(
+            """
+            UPDATE chat_sessions
+            SET title = ?, updated_at = ?
+            WHERE user_key = ? AND session_id = ?
+            """,
+            (title, now, user_key, session_id),
+        )
+        if cur.rowcount == 0:
+            return None
+
+    return get_chat_session(user_key, session_id)
+
+
+def delete_chat_session(user_key: str, session_id: str) -> bool:
+    with _connect() as conn:
+        cur = conn.execute(
+            "DELETE FROM chat_sessions WHERE user_key = ? AND session_id = ?",
+            (user_key, session_id),
+        )
+        return cur.rowcount > 0
+
+
+def ensure_chat_session(user_key: str, session_id: str | None = None) -> dict:
+    if session_id:
+        session = get_chat_session(user_key, session_id)
+        if session:
+            return session
+
+    sessions = list_chat_sessions(user_key)
+    if sessions:
+        return sessions[0]
+
+    return create_chat_session(user_key)
+
+
+def list_chat_messages(user_key: str, session_id: str) -> list:
+    ensure_chat_session(user_key, session_id)
+    with _connect() as conn:
+        rows = conn.execute(
+            """
+            SELECT m.role, m.content, m.sources_json, m.created_at
+            FROM chat_messages m
+            JOIN chat_sessions s ON s.session_id = m.session_id
+            WHERE s.user_key = ? AND s.session_id = ?
+            ORDER BY m.created_at ASC, m.message_id ASC
+            """,
+            (user_key, session_id),
+        ).fetchall()
+
+    messages = []
+    for row in rows:
+        try:
+            sources = json.loads(row["sources_json"] or "[]")
+        except json.JSONDecodeError:
+            sources = []
+        messages.append(
+            {
+                "role": row["role"],
+                "content": row["content"],
+                "sources": sources,
+                "timestamp": row["created_at"],
+            }
+        )
+    return messages
+
+
+def append_chat_message(
+    user_key: str,
+    role: str,
+    content: str,
+    sources: list | None = None,
+    session_id: str | None = None,
+):
+    if not content:
+        return
+
+    session = ensure_chat_session(user_key, session_id)
+    now = time.time()
+    serialized_sources = json.dumps(sources or [])
+
+    with _connect() as conn:
+        conn.execute(
+            """
+            INSERT INTO chat_messages (session_id, role, content, sources_json, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (session["session_id"], role, content, serialized_sources, now),
+        )
+
+        title = session["title"]
+        if role == "user" and title == DEFAULT_CHAT_TITLE:
+            title = content.strip()[:60] or DEFAULT_CHAT_TITLE
+
+        conn.execute(
+            """
+            UPDATE chat_sessions
+            SET title = ?, updated_at = ?
+            WHERE session_id = ? AND user_key = ?
+            """,
+            (title, now, session["session_id"], user_key),
+        )
+
+
+def clear_chat_messages(user_key: str, session_id: str):
+    ensure_chat_session(user_key, session_id)
+    now = time.time()
+    with _connect() as conn:
+        conn.execute(
+            """
+            DELETE FROM chat_messages
+            WHERE session_id IN (
+                SELECT session_id FROM chat_sessions WHERE user_key = ? AND session_id = ?
+            )
+            """,
+            (user_key, session_id),
+        )
+        conn.execute(
+            """
+            UPDATE chat_sessions
+            SET title = ?, updated_at = ?
+            WHERE user_key = ? AND session_id = ?
+            """,
+            (DEFAULT_CHAT_TITLE, now, user_key, session_id),
+        )
+
+
+def delete_all_chat_data(user_key: str):
+    with _connect() as conn:
+        conn.execute("DELETE FROM chat_messages WHERE session_id IN (SELECT session_id FROM chat_sessions WHERE user_key = ?)", (user_key,))
+        conn.execute("DELETE FROM chat_sessions WHERE user_key = ?", (user_key,))
+
+
+init_db()

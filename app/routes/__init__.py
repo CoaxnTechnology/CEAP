@@ -1,0 +1,1 @@
+"""DocuMind — routes package."""

@@ -3,1281 +3,238 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OneDrive AI Assistant</title>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
-
-        body {
-            font-family: 'Inter', sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            height: 100vh;
-            overflow: hidden;
-            margin: 0;
-            padding: 0;
-        }
-
-        .chat-container {
-            display: flex;
-            height: 100vh;
-            width: 100vw;
-            background: white;
-            margin: 0;
-            border-radius: 0;
-            box-shadow: none;
-            overflow: hidden;
-        }
-
-        /* Sidebar Styles */
-        .sidebar {
-            width: 350px;
-            min-width: 300px;
-            background: #f8fafc;
-            border-right: 1px solid #e5e7eb;
-            display: flex;
-            flex-direction: column;
-            flex-shrink: 0;
-        }
-
-        .sidebar-header {
-            padding: 25px 20px;
-            border-bottom: 1px solid #e5e7eb;
-            text-align: center;
-            background: white;
-        }
-
-        .sidebar-logo {
-            font-size: 32px;
-            color: #0078d4;
-            margin-bottom: 10px;
-        }
-
-        .sidebar-header h2 {
-            color: #1f2937;
-            font-size: 20px;
-            font-weight: 700;
-        }
-
-        .user-info {
-            padding: 20px;
-            display: flex;
-            align-items: center;
-            background: white;
-            border-bottom: 1px solid #e5e7eb;
-        }
-
-        .user-icon {
-            font-size: 40px;
-            color: #0078d4;
-            margin-right: 12px;
-        }
-
-        .user-details {
-            display: flex;
-            flex-direction: column;
-        }
-
-        .user-details strong {
-            color: #1f2937;
-            font-size: 16px;
-        }
-
-        .status {
-            color: #10b981;
-            font-size: 12px;
-            font-weight: 500;
-        }
-
-        .selection-panel {
-            padding: 15px;
-            background: white;
-            border-bottom: 1px solid #e5e7eb;
-        }
-
-        .selected-count {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 10px;
-        }
-
-        .clear-selection {
-            background: #ef4444;
-            color: white;
-            border: none;
-            padding: 4px 8px;
-            border-radius: 6px;
-            font-size: 11px;
-            cursor: pointer;
-        }
-
-        .selection-mode {
-            display: flex;
-            align-items: center;
-            padding: 8px 12px;
-            background: #e0f2fe;
-            border-radius: 6px;
-            margin-bottom: 10px;
-            font-size: 12px;
-            color: #0277bd;
-            font-weight: 500;
-        }
-
-        .selection-mode i {
-            margin-right: 6px;
-            font-size: 14px;
-        }
-
-        .selection-mode.searching-selected {
-            background: #f3e5f5;
-            color: #7b1fa2;
-        }
-
-        .selection-mode.searching-selected i {
-            color: #7b1fa2;
-        }
-
-        .selected-items {
-            max-height: 100px;
-            overflow-y: auto;
-        }
-
-        .selected-item {
-            display: flex;
-            align-items: center;
-            padding: 4px 8px;
-            background: #f0f7ff;
-            border-radius: 4px;
-            margin-bottom: 4px;
-            font-size: 12px;
-            position: relative;
-        }
-
-        .selected-item i {
-            margin-right: 6px;
-            font-size: 10px;
-        }
-
-        .unselect-btn {
-            background: #ef4444;
-            color: white;
-            border: none;
-            width: 16px;
-            height: 16px;
-            border-radius: 50%;
-            cursor: pointer;
-            margin-left: auto;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 8px;
-            transition: all 0.3s ease;
-            opacity: 0.8;
-        }
-
-        .unselect-btn:hover {
-            background: #dc2626;
-            transform: scale(1.2);
-            opacity: 1;
-        }
-
-        .unselect-btn:active {
-            transform: scale(0.9);
-        }
-
-        .selected-item {
-            transition: all 0.3s ease;
-        }
-
-        .selected-item.removing {
-            opacity: 0;
-            transform: translateX(-20px);
-            max-height: 0;
-            padding: 0;
-            margin: 0;
-            overflow: hidden;
-        }
-
-        .no-selection {
-            text-align: center;
-            color: #6b7280;
-            font-style: italic;
-            padding: 8px;
-            font-size: 11px;
-        }
-
-        .processing-indicator {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 8px;
-            color: #0078d4;
-            font-size: 12px;
-        }
-
-        .processing-indicator i {
-            margin-right: 6px;
-            animation: spin 1s linear infinite;
-        }
-
-        @keyframes spin {
-            from { transform: rotate(0deg); }
-            to { transform: rotate(360deg); }
-        }
-
-        .file-browser {
-            flex: 1;
-            padding: 15px;
-            overflow-y: auto;
-        }
-
-        .file-browser h4 {
-            color: #1f2937;
-            margin-bottom: 15px;
-            font-size: 14px;
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-
-        .file-actions {
-            display: flex;
-            gap: 8px;
-            margin-bottom: 15px;
-        }
-
-        .action-btn {
-            background: #f8fafc;
-            border: 1px solid #e5e7eb;
-            padding: 6px 12px;
-            border-radius: 6px;
-            font-size: 12px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            display: flex;
-            align-items: center;
-            gap: 4px;
-        }
-
-        .action-btn:hover {
-            background: #0078d4;
-            color: white;
-            border-color: #0078d4;
-        }
-
-        .action-btn.active {
-            background: #0078d4;
-            color: white;
-            border-color: #0078d4;
-        }
-
-        .file-item {
-            display: flex;
-            align-items: center;
-            padding: 8px 12px;
-            margin-bottom: 6px;
-            background: white;
-            border-radius: 6px;
-            border: 1px solid #e5e7eb;
-            transition: all 0.3s ease;
-            cursor: pointer;
-            position: relative;
-        }
-
-        .file-item:hover {
-            background: #f0f7ff;
-            border-color: #0078d4;
-        }
-
-        .file-item.selected {
-            background: #0078d4;
-            color: white;
-            border-color: #0078d4;
-            transform: scale(1.02);
-            box-shadow: 0 4px 12px rgba(0, 120, 212, 0.3);
-        }
-
-        .file-item.selected .file-type {
-            background: rgba(255, 255, 255, 0.2);
-            color: white;
-        }
-
-        .file-item {
-            transition: all 0.3s ease;
-        }
-
-        .file-item:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-        }
-
-
-        .file-checkbox {
-            margin-right: 10px;
-            position: relative;
-        }
-
-        .file-checkbox input[type="checkbox"] {
-            opacity: 0;
-            position: absolute;
-            width: 16px;
-            height: 16px;
-            margin: 0;
-            cursor: pointer;
-        }
-
-        .file-checkbox .checkmark {
-            width: 16px;
-            height: 16px;
-            border: 2px solid #d1d5db;
-            border-radius: 3px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            transition: all 0.3s ease;
-        }
-
-        .file-checkbox input[type="checkbox"]:checked + .checkmark {
-            background: #0078d4;
-            border-color: #0078d4;
-        }
-
-        .file-checkbox input[type="checkbox"]:checked + .checkmark::after {
-            content: '✓';
-            color: white;
-            font-size: 12px;
-            font-weight: bold;
-        }
-
-        .file-item i {
-            margin-right: 8px;
-            font-size: 14px;
-            width: 16px;
-            text-align: center;
-        }
-
-        .file-name {
-            font-size: 13px;
-            flex: 1;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            white-space: nowrap;
-        }
-
-        .file-type {
-            font-size: 10px;
-            background: #f3f4f6;
-            padding: 2px 6px;
-            border-radius: 4px;
-            margin-left: 8px;
-            color: #6b7280;
-        }
-
-        .file-actions {
-            display: none;
-            gap: 4px;
-            margin-left: 8px;
-        }
-
-        .file-action-btn {
-            background: rgba(255, 255, 255, 0.2);
-            border: 1px solid rgba(255, 255, 255, 0.3);
-            color: white;
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 10px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
-
-        .file-action-btn:hover {
-            background: rgba(255, 255, 255, 0.3);
-        }
-
-        .folder-contents {
-            margin-left: 20px;
-            border-left: 2px solid #e5e7eb;
-            padding-left: 10px;
-        }
-
-        .no-files {
-            text-align: center;
-            padding: 20px;
-            color: #6b7280;
-            font-size: 14px;
-        }
-
-        .no-files i {
-            font-size: 32px;
-            margin-bottom: 10px;
-            color: #9ca3af;
-        }
-
-
-        .reinitialize-btn {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            background: #0078d4;
-            color: white;
-            border: none;
-            padding: 12px 20px;
-            margin: 15px;
-            border-radius: 10px;
-            cursor: pointer;
-            font-weight: 600;
-            font-size: 14px;
-            transition: all 0.3s ease;
-        }
-
-        .reinitialize-btn:hover {
-            background: #106ebe;
-            transform: translateY(-1px);
-        }
-
-        .reinitialize-btn i {
-            margin-right: 8px;
-        }
-
-        .logout-btn {
-            display: flex;
-            align-items: center;
-            padding: 15px 20px;
-            color: #6b7280;
-            text-decoration: none;
-            border-top: 1px solid #e5e7eb;
-            transition: all 0.3s ease;
-            background: white;
-        }
-
-        .logout-btn:hover {
-            background: #f8fafc;
-            color: #ef4444;
-        }
-
-        .logout-btn i {
-            margin-right: 12px;
-        }
-
-        /* Main Content Styles */
-        .main-content {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            background: #f5f7fb;
-        }
-
-        .chat-header {
-            padding: 25px 30px;
-            background: white;
-            border-bottom: 1px solid #e5e7eb;
-        }
-
-        .chat-header h1 {
-            color: #1f2937;
-            font-size: 24px;
-            font-weight: 700;
-            margin-bottom: 5px;
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-        }
-
-        .sidebar-toggle {
-            background: #f8fafc;
-            border: 1px solid #e5e7eb;
-            color: #6b7280;
-            padding: 8px 12px;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 14px;
-            transition: all 0.3s ease;
-            display: none;
-        }
-
-        .sidebar-toggle:hover {
-            background: #e5e7eb;
-            color: #1f2937;
-        }
-
-        .sidebar.hidden {
-            transform: translateX(-100%);
-            transition: transform 0.3s ease;
-        }
-
-        .main-content.expanded {
-            margin-left: 0;
-        }
-
-        .chat-header h1 i {
-            color: #0078d4;
-            margin-right: 10px;
-        }
-
-        .chat-header p {
-            color: #6b7280;
-            font-size: 14px;
-        }
-
-        .chat-messages {
-            flex: 1;
-            padding: 25px 30px;
-            overflow-y: auto;
-            display: flex;
-            flex-direction: column;
-            gap: 20px;
-        }
-
-        .message {
-            display: flex;
-            max-width: 80%;
-            animation: fadeIn 0.3s ease;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; transform: translateY(10px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        .bot-message {
-            align-self: flex-start;
-        }
-
-        .user-message {
-            align-self: flex-end;
-            flex-direction: row-reverse;
-        }
-
-        .message-avatar {
-            width: 40px;
-            height: 40px;
-            border-radius: 50%;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            margin: 0 12px;
-            flex-shrink: 0;
-        }
-
-        .bot-message .message-avatar {
-            background: #0078d4;
-            color: white;
-        }
-
-        .user-message .message-avatar {
-            background: #10b981;
-            color: white;
-        }
-
-        .message-content {
-            background: white;
-            padding: 16px 20px;
-            border-radius: 18px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-            border: 1px solid #e5e7eb;
-            max-width: 100%;
-        }
-
-        .user-message .message-content {
-            background: #0078d4;
-            color: white;
-            border: none;
-        }
-
-        .message-text {
-            line-height: 1.5;
-            color: #1f2937;
-            word-wrap: break-word;
-        }
-
-        .user-message .message-text {
-            color: white;
-        }
-
-        .message-time {
-            font-size: 11px;
-            color: #9ca3af;
-            margin-top: 8px;
-        }
-
-        .user-message .message-time {
-            color: rgba(255, 255, 255, 0.8);
-        }
-
-        .typing-indicator {
-            display: flex;
-            align-items: center;
-            padding: 16px 20px;
-            background: white;
-            border-radius: 18px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.05);
-            border: 1px solid #e5e7eb;
-        }
-
-        .typing-dots {
-            display: flex;
-            gap: 4px;
-        }
-
-        .typing-dot {
-            width: 8px;
-            height: 8px;
-            background: #9ca3af;
-            border-radius: 50%;
-            animation: typing 1.4s infinite ease-in-out;
-        }
-
-        .typing-dot:nth-child(1) { animation-delay: -0.32s; }
-        .typing-dot:nth-child(2) { animation-delay: -0.16s; }
-
-        @keyframes typing {
-            0%, 80%, 100% { transform: scale(0.8); opacity: 0.5; }
-            40% { transform: scale(1); opacity: 1; }
-        }
-
-        .chat-input-container {
-            padding: 20px 30px;
-            background: white;
-            border-top: 1px solid #e5e7eb;
-        }
-
-        .input-wrapper {
-            display: flex;
-            background: #f8fafc;
-            border-radius: 25px;
-            padding: 8px;
-            border: 2px solid #e5e7eb;
-            transition: all 0.3s ease;
-        }
-
-        .input-wrapper:focus-within {
-            border-color: #0078d4;
-            background: white;
-        }
-
-        #messageInput {
-            flex: 1;
-            border: none;
-            background: transparent;
-            padding: 12px 20px;
-            font-size: 15px;
-            outline: none;
-            color: #1f2937;
-            resize: none;
-            max-height: 120px;
-            font-family: 'Inter', sans-serif;
-        }
-
-        #sendButton {
-            background: #0078d4;
-            color: white;
-            border: none;
-            width: 44px;
-            height: 44px;
-            border-radius: 50%;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        #sendButton:hover {
-            background: #106ebe;
-            transform: scale(1.05);
-        }
-
-        #sendButton:disabled {
-            background: #9ca3af;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        .suggestions {
-            display: flex;
-            gap: 10px;
-            margin-top: 15px;
-            flex-wrap: wrap;
-        }
-
-        .suggestion {
-            background: #f0f7ff;
-            color: #0078d4;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-size: 13px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            border: 1px solid #dbeafe;
-        }
-
-        .suggestion:hover {
-            background: #0078d4;
-            color: white;
-            transform: translateY(-2px);
-        }
-
-        .suggestion i {
-            margin-right: 6px;
-            font-size: 12px;
-        }
-
-        /* Scrollbar Styling */
-        .chat-messages::-webkit-scrollbar,
-        .file-browser::-webkit-scrollbar,
-        .selected-items::-webkit-scrollbar {
-            width: 6px;
-        }
-
-        .chat-messages::-webkit-scrollbar-track,
-        .file-browser::-webkit-scrollbar-track,
-        .selected-items::-webkit-scrollbar-track {
-            background: #f1f1f1;
-            border-radius: 3px;
-        }
-
-        .chat-messages::-webkit-scrollbar-thumb,
-        .file-browser::-webkit-scrollbar-thumb,
-        .selected-items::-webkit-scrollbar-thumb {
-            background: #c1c1c1;
-            border-radius: 3px;
-        }
-
-        .chat-messages::-webkit-scrollbar-thumb:hover,
-        .file-browser::-webkit-scrollbar-thumb:hover,
-        .selected-items::-webkit-scrollbar-thumb:hover {
-            background: #a8a8a8;
-        }
-
-        /* Responsive Design */
-        @media (max-width: 768px) {
-            .chat-container {
-                flex-direction: column;
-                margin: 0;
-                border-radius: 0;
-            }
-            
-            .sidebar {
-                width: 100%;
-                height: 40vh;
-                min-height: 300px;
-                position: absolute;
-                z-index: 1000;
-                transform: translateX(-100%);
-                transition: transform 0.3s ease;
-            }
-            
-            .sidebar.visible {
-                transform: translateX(0);
-            }
-            
-            .main-content {
-                height: 100vh;
-                width: 100%;
-            }
-            
-            .sidebar-toggle {
-                display: block;
-            }
-            
-            .message {
-                max-width: 90%;
-            }
-        }
-
-        @media (max-width: 480px) {
-            .sidebar {
-                height: 50vh;
-            }
-            
-            .main-content {
-                height: 50vh;
-            }
-        }
-    </style>
+    <title>DocuMind</title>
+    <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/chat.css') }}" rel="stylesheet">
 </head>
 <body>
-    <div class="chat-container">
-        <!-- Sidebar -->
-        <div class="sidebar">
-            <div class="sidebar-header">
-                <div class="sidebar-logo">
-                    <i class="fab fa-microsoft"></i>
-                </div>
-                <h2>OneDrive AI</h2>
-            </div>
-
-            <div class="user-info">
-                <div class="user-icon">
-                    <i class="fas fa-user"></i>
-                </div>
-                <div class="user-details">
-                    <strong>{{ username }}</strong>
-                    <span class="status">Connected</span>
-                </div>
-            </div>
-
-            <div class="selection-panel">
-                <div class="selected-count">
-                    <span id="selectedCount">0 files selected</span>
-                    <button class="clear-selection" onclick="clearSelection()">Clear</button>
-                </div>
-                <div class="selection-mode" id="selectionMode">
-                    <i class="fas fa-globe"></i>
-                    <span>Searching ALL files</span>
-                </div>
-                <div class="selected-items" id="selectedItems">
-                    <!-- Selected items will appear here -->
-                </div>
-            </div>
-
-            <div class="file-browser">
-                <h4>
-                    <i class="fas fa-folder-open"></i>
-                    OneDrive Files
-                    <button class="reinitialize-btn" onclick="reinitializeFiles()">
-                        <i class="fas fa-sync-alt"></i>
-                        Refresh
-                    </button>
-                </h4>
-                
-                <div class="file-actions">
-                    <button class="action-btn" onclick="selectAllFiles()">
-                        <i class="fas fa-check-square"></i>
-                        Select All
-                    </button>
-                    <button class="action-btn" onclick="clearSelection()">
-                        <i class="fas fa-times"></i>
-                        Clear
-                    </button>
-                    <button class="action-btn" onclick="testSelection()">
-                        <i class="fas fa-bug"></i>
-                        Test Selection
-                    </button>
-                    <button class="action-btn" onclick="clearCache()">
-                        <i class="fas fa-trash"></i>
-                        Clear Cache
-                    </button>
-                    <button class="action-btn" onclick="toggleViewMode()">
-                        <i class="fas fa-th-list"></i>
-                        List View
-                    </button>
-                </div>
-                
-                {% if directory_structure %}
-                    {{ render_directory(directory_structure) | safe }}
-                {% else %}
-                    <div class="no-files">
-                        <i class="fas fa-folder-open"></i>
-                        <p>No files found. Click refresh to load your OneDrive files.</p>
+    <div class="app-shell">
+        <aside class="sessions-panel" id="sessionsPanel">
+            <div class="sessions-header">
+                <div class="brand-mark">
+                    <span class="brand-badge">DM</span>
+                    <div class="brand-copy">
+                        <strong>DocuMind</strong>
+                        <small>Enterprise Assistant</small>
                     </div>
-                {% endif %}
+                </div>
+                <button class="icon-btn mobile-only" id="closeMobileSidebarBtn" title="Close sidebar">
+                    <i class="fas fa-xmark"></i>
+                </button>
             </div>
 
-            <a href="{{ url_for('logout') }}" class="logout-btn">
-                <i class="fas fa-sign-out-alt"></i>
-                Logout
-            </a>
-        </div>
+            <button class="primary-btn" id="newChatBtn">
+                <i class="fas fa-plus"></i>
+                New Chat
+            </button>
 
-        <!-- Main Content -->
-        <div class="main-content">
-            <div class="chat-header">
-                <h1>
-                    <i class="fas fa-robot"></i>
-                    AI Assistant
-                    <button class="sidebar-toggle" onclick="toggleSidebar()" id="sidebarToggle">
+            <div class="sessions-group">
+                <h4>Current Chat</h4>
+                <div class="chat-list current" id="currentChatList"></div>
+            </div>
+
+            <div class="sessions-group">
+                <h4>Past Chats</h4>
+                <div class="chat-list past" id="pastChatList"></div>
+            </div>
+
+            <div class="sessions-footer">
+                <div class="user-pill">
+                    <div class="user-avatar">{{ username[0]|upper }}</div>
+                    <div class="user-meta">
+                        <strong>{{ username }}</strong>
+                        <small>Workspace user</small>
+                    </div>
+                    <a href="/logout" class="icon-btn" title="Logout">
+                        <i class="fas fa-sign-out-alt"></i>
+                    </a>
+                </div>
+            </div>
+        </aside>
+
+        <div class="mobile-backdrop" id="mobileBackdrop"></div>
+
+        <main class="workspace">
+            <header class="workspace-topbar">
+                <div class="topbar-left">
+                    <button class="icon-btn desktop-only" id="sessionsPanelToggleBtn" title="Toggle chats sidebar">
+                        <i class="fas fa-columns"></i>
+                    </button>
+                    <button class="icon-btn mobile-only" id="mobileMenuBtn" title="Open sidebar">
                         <i class="fas fa-bars"></i>
                     </button>
-                </h1>
-                <p>Ask questions about your OneDrive files or get help with specific documents</p>
-            </div>
-
-            <div class="chat-messages" id="chatMessages">
-                <div class="message bot-message">
-                    <div class="message-avatar">
-                        <i class="fas fa-robot"></i>
-                    </div>
-                    <div class="message-content">
-                        <div class="message-text">
-                            Hello! I'm your OneDrive AI assistant. I can help you:
-                            <br>• Search through ALL your OneDrive files automatically
-                            <br>• Analyze specific documents when you select them
-                            <br>• Process multiple files at once
-                            <br>• Analyze data in spreadsheets and PDFs
-                            <br><br><strong>How to use:</strong>
-                            <br>• <strong>No files selected:</strong> I'll search through ALL your OneDrive files
-                            <br>• <strong>Files selected:</strong> I'll only analyze the files you've chosen
-                            <br>• <strong>Click checkboxes</strong> to select/deselect files
-                            <br>• <strong>Selected files</strong> will show blue background
-                            <br>• <strong>Click ❌ buttons</strong> to remove individual files
-                            <br>• <strong>Select multiple files</strong> to analyze them together
-                        </div>
-                        <div class="message-time" id="welcomeTime">Just now</div>
+                    <div class="title-wrap">
+                        <h1 id="sessionTitle">New Chat</h1>
+                        <p id="sessionUpdatedAt">Last updated just now</p>
                     </div>
                 </div>
-            </div>
+                <div class="topbar-right">
+                    <button class="icon-btn files-toggle-btn" id="filesPanelToggleBtn" title="Toggle files panel">
+                        <i class="fas fa-folder-open"></i>
+                        <span>Files</span>
+                    </button>
+                    <button class="ghost-btn danger" id="clearChatBtn">
+                        <i class="fas fa-trash"></i>
+                        Clear Chat
+                    </button>
+                </div>
+            </header>
 
-            <div class="chat-input-container">
-                <div class="input-wrapper">
-                    <textarea id="messageInput" placeholder="Ask me anything about your OneDrive files..." rows="1"></textarea>
-                    <button id="sendButton" disabled>
+            <section class="chat-stage">
+                <div class="welcome-panel" id="welcomePanel">
+                    <div class="welcome-badge">
+                        <i class="fas fa-comments"></i>
+                    </div>
+                    <h2>How can I help with your documents today?</h2>
+                    <p>Upload files or import from OneDrive, select relevant sources, then ask questions for concise grounded answers.</p>
+                    <div class="quick-prompts">
+                        <button class="prompt-chip" data-prompt="Summarize the selected document in key bullets.">
+                            <i class="fas fa-list"></i>
+                            Summarize
+                        </button>
+                        <button class="prompt-chip" data-prompt="What are the critical action items and deadlines?">
+                            <i class="fas fa-lightbulb"></i>
+                            Action Items
+                        </button>
+                        <button class="prompt-chip" data-prompt="Find the section that discusses implementation constraints.">
+                            <i class="fas fa-search"></i>
+                            Find Section
+                        </button>
+                        <button class="prompt-chip" data-prompt="Compare options mentioned in the selected files.">
+                            <i class="fas fa-exchange-alt"></i>
+                            Compare
+                        </button>
+                    </div>
+                </div>
+
+                <div class="messages-list" id="messages"></div>
+            </section>
+
+            <section class="composer-panel">
+                <div class="selected-files-bar" id="selectedFilesBar">
+                    <span id="selectedFilesText">No files selected</span>
+                    <button class="ghost-btn small" id="clearFilesSelectionBtn">Clear Selection</button>
+                </div>
+
+                <div class="composer-row">
+                    <button class="icon-btn composer-upload-btn" id="chatUploadBtn" title="Upload files">
+                        <i class="fas fa-paperclip"></i>
+                    </button>
+                    <textarea id="messageInput" placeholder="Ask a question about your selected files..." rows="1"></textarea>
+                    <button class="send-btn" id="sendBtn" disabled>
                         <i class="fas fa-paper-plane"></i>
                     </button>
                 </div>
-                
-                <div class="suggestions">
-                    <div class="suggestion" data-question="What files do I have in my OneDrive?">
-                        <i class="fas fa-search"></i>
-                        List all my files
-                    </div>
-                    <div class="suggestion" data-question="Summarize all my recent documents">
-                        <i class="fas fa-file-alt"></i>
-                        Summarize all documents
-                    </div>
-                    <div class="suggestion" data-question="Find all files related to project management">
-                        <i class="fas fa-folder"></i>
-                        Find project files
-                    </div>
-                    <div class="suggestion" data-question="What are the main topics in my files?">
-                        <i class="fas fa-brain"></i>
-                        Analyze file topics
-                    </div>
+
+                <p class="composer-hint">Responses are grounded in indexed documents. Verify critical outputs.</p>
+            </section>
+        </main>
+
+        <aside class="files-panel" id="filesPanel">
+            <div class="files-panel-header">
+                <h3>Files</h3>
+                <p class="files-panel-subtitle">Upload from chatbox. Select indexed files here.</p>
+                <div class="files-mode-switch">
+                    <button class="mode-btn active" id="filesModeDocsBtn" data-mode="docs">Documents</button>
+                    <button class="mode-btn" id="filesModeOneDriveBtn" data-mode="onedrive">OneDrive</button>
                 </div>
             </div>
+
+            <div class="tab-pane active" id="localPane">
+                <div class="pane-toolbar split">
+                    <h4 class="pane-title">Indexed Documents</h4>
+                    <button class="ghost-btn small" id="refreshFilesBtn">
+                        <i class="fas fa-rotate"></i>
+                        Refresh
+                    </button>
+                </div>
+
+                <input type="file" id="fileInput" multiple accept=".pdf,.docx,.doc,.xlsx,.xls,.csv,.txt" hidden>
+
+                <div class="pane-stats">
+                    <span id="filesCount">0 documents</span>
+                    <span id="filesChunks">0 chunks</span>
+                </div>
+
+                <div class="file-list" id="filesList"></div>
+            </div>
+
+            <div class="tab-pane" id="oneDrivePane">
+                <div class="pane-toolbar split">
+                    <h4 class="pane-title">OneDrive Import</h4>
+                    <button class="ghost-btn small icon-only" id="odRefreshBtn" title="Refresh folder">
+                        <i class="fas fa-rotate"></i>
+                    </button>
+                </div>
+                <div class="od-connection-card">
+                    <div>
+                        <strong id="odStatusText">Checking OneDrive status...</strong>
+                        <small id="odUserText">Connect your OneDrive to import files.</small>
+                    </div>
+                    <div class="od-connection-actions">
+                        <a href="/onedrive/connect" class="primary-btn small" id="odConnectBtn">Connect</a>
+                        <button class="ghost-btn small" id="odDisconnectBtn">Disconnect</button>
+                    </div>
+                </div>
+
+                <div class="pane-toolbar">
+                    <button class="ghost-btn small" id="odBackBtn">
+                        <i class="fas fa-arrow-left"></i>
+                        Back
+                    </button>
+                    <span class="od-path" id="odPathLabel">/</span>
+                </div>
+
+                <div class="pane-toolbar compact">
+                    <button class="primary-btn small" id="odImportBtn">
+                        <i class="fas fa-cloud-arrow-down"></i>
+                        Import Selected
+                    </button>
+                    <span id="odSelectionCount">0 selected</span>
+                </div>
+
+                <div class="od-file-list" id="odFilesList"></div>
+            </div>
+
+            <div class="files-selected-bar" id="filesSelectedBar">
+                <span id="filesSelectedBarText">0 selected</span>
+                <button class="ghost-btn small" id="filesSelectedClearBtn">Clear</button>
+            </div>
+        </aside>
+    </div>
+
+    <div class="upload-progress-card" id="uploadProgressCard">
+        <div class="upload-progress-header">
+            <i class="fas fa-cog fa-spin"></i>
+            <span id="uploadProgressTitle">Processing files...</span>
+        </div>
+        <div class="upload-progress-bar">
+            <div class="upload-progress-fill" id="uploadProgressFill"></div>
+        </div>
+        <div class="upload-progress-text" id="uploadProgressText">Preparing...</div>
+    </div>
+
+    <div class="citation-overlay" id="citationOverlay">
+        <div class="citation-modal">
+            <div class="citation-modal-header">
+                <div>
+                    <h4 id="citationTitle">Source</h4>
+                    <p id="citationMeta"></p>
+                </div>
+                <button class="icon-btn" id="citationCloseBtn" title="Close">
+                    <i class="fas fa-xmark"></i>
+                </button>
+            </div>
+            <div class="citation-body" id="citationBody"></div>
         </div>
     </div>
 
-
-    <script src="{{ url_for('static', filename='script.js') }}"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.6/purify.min.js"></script>
     <script>
-        // Global variables
-        let selectedFiles = [];
-        let viewMode = 'list';
-
-        // Initialize the app
-        document.addEventListener('DOMContentLoaded', function() {
-            initializeApp();
-            // Set the welcome message time
-            const welcomeTime = document.getElementById('welcomeTime');
-            if (welcomeTime) {
-                welcomeTime.textContent = new Date().toLocaleTimeString('en-US', { 
-                    hour: '2-digit', 
-                    minute: '2-digit',
-                    hour12: true 
-                });
-            }
-            
-            // Add keyboard shortcut for sidebar toggle (Ctrl/Cmd + B)
-            document.addEventListener('keydown', function(e) {
-                if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
-                    e.preventDefault();
-                    toggleSidebar();
-                }
-            });
-        });
-
-        function initializeApp() {
-            // Initialize chat functionality
-            if (typeof ChatApp !== 'undefined') {
-                new ChatApp();
-            }
-            
-            // Initialize file selection
-            initializeFileSelection();
-            
-            // Initialize editor
-            initializeEditor();
-        }
-
-        function initializeFileSelection() {
-            // File selection is now handled by the ChatApp class
-            console.log('File selection initialization delegated to ChatApp');
-        }
-
-        function initializeEditor() {
-            // Editor initialization code will go here
-        }
-
-        function toggleFileSelection(fileId, fileName, fileType, fileExtension) {
-            const existingIndex = selectedFiles.findIndex(f => f.id === fileId);
-            
-            if (existingIndex > -1) {
-                selectedFiles.splice(existingIndex, 1);
-            } else {
-                selectedFiles.push({
-                    id: fileId,
-                    name: fileName,
-                    type: fileType,
-                    extension: fileExtension
-                });
-            }
-            
-            updateSelectionUI();
-        }
-
-        function selectFile(fileId, fileName, fileType, fileExtension) {
-            // Clear previous selection
-            selectedFiles = [{
-                id: fileId,
-                name: fileName,
-                type: fileType,
-                extension: fileExtension
-            }];
-            
-            updateSelectionUI();
-        }
-
-        function updateSelectionUI() {
-            // Update selected count
-            document.getElementById('selectedCount').textContent = 
-                `${selectedFiles.length} file${selectedFiles.length !== 1 ? 's' : ''} selected`;
-            
-            // Update selected items display
-            const selectedItems = document.getElementById('selectedItems');
-            selectedItems.innerHTML = selectedFiles.map(file => `
-                <div class="selected-item">
-                    <i class="fas fa-${getFileIcon(file.extension)}"></i>
-                    <span>${file.name}</span>
-                </div>
-            `).join('');
-            
-            // Update file item visual states
-            document.querySelectorAll('.file-item').forEach(item => {
-                const isSelected = selectedFiles.some(f => f.id === item.id);
-                item.classList.toggle('selected', isSelected);
-                
-                // Update checkbox state
-                const checkbox = item.querySelector('input[type="checkbox"]');
-                if (checkbox) {
-                    checkbox.checked = isSelected;
-                }
-            });
-        }
-
-        function getFileIcon(extension) {
-            const iconMap = {
-                'pdf': 'file-pdf',
-                'docx': 'file-word',
-                'doc': 'file-word',
-                'xlsx': 'file-excel',
-                'xls': 'file-excel',
-                'csv': 'file-csv',
-                'txt': 'file-alt',
-                'pptx': 'file-powerpoint',
-                'ppt': 'file-powerpoint',
-                'jpg': 'file-image',
-                'jpeg': 'file-image',
-                'png': 'file-image',
-                'gif': 'file-image'
-            };
-            return iconMap[extension] || 'file';
-        }
-
-        function selectAllFiles() {
-            const allFileItems = document.querySelectorAll('.file-item');
-            selectedFiles = [];
-            
-            allFileItems.forEach(item => {
-                const fileId = item.id;
-                const fileName = item.dataset.name;
-                const fileType = item.dataset.type;
-                const fileExtension = item.dataset.extension;
-                
-                selectedFiles.push({
-                    id: fileId,
-                    name: fileName,
-                    type: fileType,
-                    extension: fileExtension
-                });
-            });
-            
-            updateSelectionUI();
-        }
-
-        function clearSelection() {
-            selectedFiles = [];
-            updateSelectionUI();
-        }
-
-        function toggleViewMode() {
-            viewMode = viewMode === 'list' ? 'grid' : 'list';
-            // Implement view mode toggle
-            console.log('View mode:', viewMode);
-        }
-
-        function reinitializeFiles() {
-            // Reload the page to refresh files
-            window.location.reload();
-        }
-
-        function toggleSidebar() {
-            const sidebar = document.querySelector('.sidebar');
-            const mainContent = document.querySelector('.main-content');
-            const toggleBtn = document.getElementById('sidebarToggle');
-            
-            sidebar.classList.toggle('visible');
-            mainContent.classList.toggle('expanded');
-            
-            // Update button icon
-            const icon = toggleBtn.querySelector('i');
-            if (sidebar.classList.contains('visible')) {
-                icon.className = 'fas fa-times';
-            } else {
-                icon.className = 'fas fa-bars';
-            }
-        }
-
-        function openEditor(fileId, fileName, fileType) {
-            currentFile = { id: fileId, name: fileName, type: fileType };
-            document.getElementById('editorFileName').textContent = fileName;
-            document.getElementById('fileEditor').style.display = 'flex';
-            
-            // Load file content
-            loadFileContent(fileId);
-        }
-
-        function closeEditor() {
-            document.getElementById('fileEditor').style.display = 'none';
-            currentFile = null;
-        }
-
-        function loadFileContent(fileId) {
-            // This would load the actual file content
-            // For now, we'll show a placeholder
-            document.getElementById('editorTextarea').value = 'Loading file content...';
-        }
-
-        function saveFile() {
-            if (!currentFile) return;
-            
-            const content = document.getElementById('editorTextarea').value;
-            // Implement save functionality
-            console.log('Saving file:', currentFile.name, content);
-        }
-
-        function formatText() {
-            // Implement text formatting
-            console.log('Format text');
-        }
-
-        function insertLink() {
-            // Implement link insertion
-            console.log('Insert link');
-        }
-
-        function insertTable() {
-            // Implement table insertion
-            console.log('Insert table');
-        }
-
-        // Enhanced sendMessage function that includes selected files
-        function sendMessageWithFiles(message) {
-            if (!message.trim()) return;
-
-            // Add user message to chat
-            addMessage(message, 'user');
-
-            // Show typing indicator
-            showTypingIndicator();
-
-            // Prepare request data
-            const requestData = {
-                question: message,
-                selected_items: selectedFiles
-            };
-
-            // Send to backend
-            fetch('/api/chat', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify(requestData)
-            })
-            .then(response => response.json())
-            .then(data => {
-                hideTypingIndicator();
-                if (data.error) {
-                    addMessage(`Error: ${data.error}`, 'bot');
-                } else {
-                    addMessage(data.response, 'bot');
-                }
-            })
-            .catch(error => {
-                hideTypingIndicator();
-                addMessage('Sorry, there was an error processing your request.', 'bot');
-                console.error('Error:', error);
-            });
-        }
-
-        function addMessage(text, sender) {
-            const chatMessages = document.getElementById('chatMessages');
-            const messageDiv = document.createElement('div');
-            messageDiv.className = `message ${sender}-message`;
-
-            const avatarIcon = sender === 'bot' ? 'fas fa-robot' : 'fas fa-user';
-            const time = new Date().toLocaleTimeString('en-US', { 
-                hour: '2-digit', 
-                minute: '2-digit',
-                hour12: true 
-            });
-
-            messageDiv.innerHTML = `
-                <div class="message-avatar">
-                    <i class="${avatarIcon}"></i>
-                </div>
-                <div class="message-content">
-                    <div class="message-text">${escapeHtml(text)}</div>
-                    <div class="message-time">${time}</div>
-                </div>
-            `;
-
-            chatMessages.appendChild(messageDiv);
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-        }
-
-        function showTypingIndicator() {
-            const chatMessages = document.getElementById('chatMessages');
-            const typingDiv = document.createElement('div');
-            typingDiv.className = 'message bot-message';
-            typingDiv.id = 'typingIndicator';
-
-            typingDiv.innerHTML = `
-                <div class="message-avatar">
-                    <i class="fas fa-robot"></i>
-                </div>
-                <div class="typing-indicator">
-                    <div class="typing-dots">
-                        <div class="typing-dot"></div>
-                        <div class="typing-dot"></div>
-                        <div class="typing-dot"></div>
-                    </div>
-                </div>
-            `;
-
-            chatMessages.appendChild(typingDiv);
-            chatMessages.scrollTop = chatMessages.scrollHeight;
-        }
-
-        function hideTypingIndicator() {
-            const typingIndicator = document.getElementById('typingIndicator');
-            if (typingIndicator) {
-                typingIndicator.remove();
-            }
-        }
-
-        function escapeHtml(text) {
-            const div = document.createElement('div');
-            div.textContent = text;
-            return div.innerHTML;
-        }
+        marked.setOptions({ breaks: true, gfm: true });
     </script>
+    <script src="{{ url_for('static', filename='js/chat.js') }}"></script>
 </body>
 </html>

@@ -61,7 +61,7 @@ A comprehensive web application that allows you to interact with your OneDrive f
 
 4. **Run the application**
    ```bash
-   python app.py
+   python run.py
    ```
 
 5. **Access the application**

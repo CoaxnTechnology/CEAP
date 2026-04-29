@@ -1,10 +1,24 @@
-flask
-flask-session
-msal
-requests
-google-generativeai
-pandas
-PyPDF2
-python-docx
-python-dotenv
-gunicorn==22.0.0
+# Web framework
+flask>=3.0
+flask-session>=0.6
+python-dotenv>=1.0
+
+# AI
+google-genai>=1.0
+
+# File parsing
+PyPDF2>=3.0
+python-docx>=1.1
+pandas>=2.0
+openpyxl>=3.1
+xlrd>=2.0
+
+# Vector DB (persistent, no server needed)
+chromadb>=0.5
+
+# Local embeddings (used by ChromaDB hybrid search)
+sentence-transformers>=3.0
+
+# OneDrive OAuth
+msal>=1.28
+requests>=2.31
