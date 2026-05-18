@@ -1,5 +1,18 @@
+# Python
+__pycache__/
+*.pyc
+
+# Virtual environment
 .venv/
+
+# Environment
 .env
+
+# Runtime data (auto-created)
+documind.sqlite3*
+chroma_db/
+logs/
 flask_session/
 
- __pycache__/
+# Lint / tooling cache
+.ruff_cache/
