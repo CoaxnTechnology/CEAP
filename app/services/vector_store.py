@@ -20,6 +20,7 @@ from chromadb.config import Settings
 from sentence_transformers import SentenceTransformer
 
 from app.config import RAGConfig
+from app.services.persistence import add_file_chunks, list_file_chunks, remove_file_chunks
 
 # ── Embedding model (loaded lazily to avoid startup failure before first use) ──
 EMBED_MODEL = None
@@ -118,13 +119,26 @@ class ChromaStore:
                 metadatas=metas[i : i + 500],
             )
 
+        # Track file IDs in SQLite cache
+        seen = set()
+        for c in new_chunks:
+            fid = c["file_id"]
+            if fid not in seen:
+                seen.add(fid)
+                add_file_chunks(self.user_key, fid, 0)
+
     def remove_file(self, file_id: str):
         self._col.delete(where={"file_id": file_id})
+        remove_file_chunks(self.user_key, file_id)
 
     def count(self) -> int:
         return self._col.count()
 
     def indexed_file_ids(self) -> set[str]:
+        cached = list_file_chunks(self.user_key)
+        if cached:
+            return cached
+
         if self._col.count() == 0:
             return set()
 
@@ -135,17 +149,15 @@ class ChromaStore:
 
         for i, meta in enumerate(metadatas):
             file_id = None
-            # First try to get from metadata
             if isinstance(meta, dict) and meta.get("file_id"):
                 file_id = meta.get("file_id")
-            # If not in metadata, extract from ID (format: {file_id}__chunk__{index})
             elif i < len(ids):
                 parts = ids[i].split("__chunk__")
                 if len(parts) >= 1:
                     file_id = parts[0]
-
             if file_id:
                 file_ids.add(file_id)
+                add_file_chunks(self.user_key, file_id, 0)
 
         return file_ids
 

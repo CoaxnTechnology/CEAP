@@ -4,6 +4,8 @@ import sqlite3
 import time
 import uuid
 
+from werkzeug.security import generate_password_hash
+
 
 DB_PATH = os.getenv("APP_DB_PATH", "./documind.sqlite3")
 
@@ -17,6 +19,8 @@ def _connect():
     _ensure_db_dir()
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode = WAL")
+    conn.execute("PRAGMA synchronous = NORMAL")
     conn.execute("PRAGMA foreign_keys = ON")
     return conn
 
@@ -66,8 +70,77 @@ def init_db():
 
             CREATE INDEX IF NOT EXISTS idx_chat_messages_session
             ON chat_messages(session_id, created_at ASC, message_id ASC);
+
+            CREATE TABLE IF NOT EXISTS users (
+                email TEXT PRIMARY KEY,
+                password_hash TEXT NOT NULL,
+                created_at REAL NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS file_chunks (
+                user_key TEXT NOT NULL,
+                file_id TEXT NOT NULL,
+                chunk_count INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (user_key, file_id)
+            );
             """
         )
+
+
+def init_users_from_config():
+    from app.config import AuthConfig
+    for email, password in AuthConfig.USERS.items():
+        email_norm = email.strip().lower()
+        if not get_user_by_email(email_norm):
+            create_user(email_norm, password)
+
+
+def get_user_by_email(email: str) -> dict | None:
+    with _connect() as conn:
+        row = conn.execute(
+            "SELECT email, password_hash, created_at FROM users WHERE email = ?",
+            (email.strip().lower(),),
+        ).fetchone()
+    if not row:
+        return None
+    return {"email": row["email"], "password_hash": row["password_hash"], "created_at": row["created_at"]}
+
+
+def create_user(email: str, password: str) -> dict:
+    email_norm = email.strip().lower()
+    pw_hash = generate_password_hash(password)
+    now = time.time()
+    with _connect() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO users (email, password_hash, created_at) VALUES (?, ?, ?)",
+            (email_norm, pw_hash, now),
+        )
+    return {"email": email_norm, "created_at": now}
+
+
+def add_file_chunks(user_key: str, file_id: str, count: int = 0):
+    with _connect() as conn:
+        conn.execute(
+            "INSERT OR REPLACE INTO file_chunks (user_key, file_id, chunk_count) VALUES (?, ?, ?)",
+            (user_key, file_id, count),
+        )
+
+
+def remove_file_chunks(user_key: str, file_id: str):
+    with _connect() as conn:
+        conn.execute(
+            "DELETE FROM file_chunks WHERE user_key = ? AND file_id = ?",
+            (user_key, file_id),
+        )
+
+
+def list_file_chunks(user_key: str) -> set[str]:
+    with _connect() as conn:
+        rows = conn.execute(
+            "SELECT file_id FROM file_chunks WHERE user_key = ?",
+            (user_key,),
+        ).fetchall()
+    return {row["file_id"] for row in rows}
 
 
 def list_documents(user_key: str) -> dict:
@@ -373,3 +446,4 @@ def delete_all_chat_data(user_key: str):
 
 
 init_db()
+init_users_from_config()

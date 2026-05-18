@@ -4,7 +4,10 @@ import os
 import logging
 from logging.handlers import RotatingFileHandler
 from flask import Flask
+from flask_wtf.csrf import CSRFProtect
 from app.config import Config
+
+csrf = CSRFProtect()
 
 
 def create_app():
@@ -15,6 +18,9 @@ def create_app():
         static_folder=os.path.join(base_dir, "static"),
     )
     app.secret_key = Config.SECRET_KEY or "documind-dev-secret-key"
+    app.config['SESSION_PERMANENT'] = True
+    app.config['PERMANENT_SESSION_LIFETIME'] = 86400
+    app.config['WTF_CSRF_TIME_LIMIT'] = None
 
     from app.routes.auth import auth_bp
     from app.routes.files import files_bp
@@ -25,6 +31,9 @@ def create_app():
     app.register_blueprint(files_bp)
     app.register_blueprint(onedrive_bp)
     app.register_blueprint(chat_bp)
+
+    csrf.init_app(app)
+    csrf.exempt(auth_bp)
 
     logs_dir = os.path.join(base_dir, "logs")
     os.makedirs(logs_dir, exist_ok=True)

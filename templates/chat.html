@@ -6,6 +6,7 @@
     <title>DocuMind</title>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
     <link href="{{ url_for('static', filename='css/chat.css') }}" rel="stylesheet">
 </head>
 <body>
@@ -49,14 +50,41 @@
                     <a href="/logout" class="icon-btn" title="Logout">
                         <i class="fas fa-sign-out-alt"></i>
                     </a>
+                    <button class="icon-btn" id="darkModeToggle" title="Toggle dark mode">
+                        <i class="fas fa-moon"></i>
+                    </button>
                 </div>
             </div>
         </aside>
 
         <div class="mobile-backdrop" id="mobileBackdrop"></div>
 
-        <main class="workspace">
-            <header class="workspace-topbar">
+    <main class="workspace">
+        <div class="skeleton-loader" id="skeletonLoader">
+            <div class="sk-topbar">
+                <div class="sk-line sk-w-32"></div>
+                <div class="sk-line sk-w-20"></div>
+            </div>
+            <div class="sk-body">
+                <div class="sk-message">
+                    <div class="sk-avatar"></div>
+                    <div class="sk-line sk-w-60"></div>
+                    <div class="sk-line sk-w-40"></div>
+                </div>
+                <div class="sk-message sk-right">
+                    <div class="sk-avatar"></div>
+                    <div class="sk-line sk-w-50"></div>
+                </div>
+                <div class="sk-message">
+                    <div class="sk-avatar"></div>
+                    <div class="sk-line sk-w-70"></div>
+                    <div class="sk-line sk-w-45"></div>
+                    <div class="sk-line sk-w-30"></div>
+                </div>
+            </div>
+        </div>
+
+        <header class="workspace-topbar">
                 <div class="topbar-left">
                     <button class="icon-btn desktop-only" id="sessionsPanelToggleBtn" title="Toggle chats sidebar">
                         <i class="fas fa-columns"></i>
@@ -108,10 +136,16 @@
                     </div>
                 </div>
 
-                <div class="messages-list" id="messages"></div>
+                <div class="messages-list" id="messages" role="log" aria-live="polite"></div>
             </section>
 
-            <section class="composer-panel">
+            <section class="composer-panel" id="composerPanel">
+                <div class="drop-overlay" id="dropOverlay">
+                    <i class="fas fa-cloud-upload-alt"></i>
+                    <p>Drop files to upload &amp; index</p>
+                    <small>PDF, DOCX, XLSX, CSV, TXT supported</small>
+                </div>
+
                 <div class="selected-files-bar" id="selectedFilesBar">
                     <span id="selectedFilesText">No files selected</span>
                     <button class="ghost-btn small" id="clearFilesSelectionBtn">Clear Selection</button>
@@ -214,6 +248,8 @@
         </div>
         <div class="upload-progress-text" id="uploadProgressText">Preparing...</div>
     </div>
+
+    <div id="toastContainer" class="toast-container"></div>
 
     <div class="citation-overlay" id="citationOverlay">
         <div class="citation-modal">

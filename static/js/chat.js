@@ -19,6 +19,17 @@ const state = {
     },
 };
 
+const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "";
+
+async function apiFetch(url, options = {}) {
+    const method = (options.method || "GET").toUpperCase();
+    const headers = { ...(options.headers || {}) };
+    if (["POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+        headers["X-CSRFToken"] = csrfToken;
+    }
+    return fetch(url, { ...options, headers });
+}
+
 const dom = {};
 
 document.addEventListener("DOMContentLoaded", init);
@@ -28,10 +39,26 @@ async function init() {
     bindEvents();
     restoreSelectedFiles();
 
-    await Promise.all([loadFiles(), loadChatSessions(), loadOneDriveStatus()]);
-    await loadPersistedChat(state.currentSessionId);
-    switchFilesMode("docs");
-    updateSessionHeader();
+    const skel = document.getElementById("skeletonLoader");
+    if (skel) {
+        skel.classList.add("show");
+    }
+
+    applyDarkModePreference();
+
+    try {
+        await Promise.all([loadFiles(), loadChatSessions(), loadOneDriveStatus()]);
+        await loadPersistedChat(state.currentSessionId);
+        switchFilesMode("docs");
+        updateSessionHeader();
+    } catch (error) {
+        console.error("init failed:", error);
+        showToast("Failed to load some data. Try refreshing the page.", "error");
+    } finally {
+        if (skel) {
+            skel.classList.remove("show");
+        }
+    }
 }
 
 function cacheDom() {
@@ -96,6 +123,10 @@ function cacheDom() {
     dom.citationTitle = document.getElementById("citationTitle");
     dom.citationMeta = document.getElementById("citationMeta");
     dom.citationBody = document.getElementById("citationBody");
+
+    dom.darkModeToggle = document.getElementById("darkModeToggle");
+    dom.composerPanel = document.getElementById("composerPanel");
+    dom.dropOverlay = document.getElementById("dropOverlay");
 }
 
 function bindEvents() {
@@ -163,6 +194,14 @@ function bindEvents() {
             closeCitationModal();
         }
     });
+
+    dom.darkModeToggle?.addEventListener("click", toggleDarkMode);
+
+    dom.sessionTitle?.addEventListener("dblclick", startRenameSession);
+
+    dom.composerPanel?.addEventListener("dragover", handleDragOver);
+    dom.composerPanel?.addEventListener("dragleave", handleDragLeave);
+    dom.composerPanel?.addEventListener("drop", handleDrop);
 }
 
 function autoResizeInput() {
@@ -252,7 +291,7 @@ function switchFilesMode(mode) {
 
 async function createNewChat() {
     try {
-        const res = await fetch("/api/chat/sessions", {
+        const res = await apiFetch("/api/chat/sessions", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({}),
@@ -270,6 +309,7 @@ async function createNewChat() {
         closeMobilePanels();
     } catch (error) {
         console.error("Failed to create chat:", error);
+        showToast("Failed to create a new chat.", "error");
     }
 }
 
@@ -359,7 +399,7 @@ async function deleteChat(sessionId) {
         return;
     }
     try {
-        const res = await fetch(`/api/chat/sessions/${encodeURIComponent(sessionId)}`, {
+        const res = await apiFetch(`/api/chat/sessions/${encodeURIComponent(sessionId)}`, {
             method: "DELETE",
         });
         const data = await res.json();
@@ -374,8 +414,10 @@ async function deleteChat(sessionId) {
         }
         await loadChatSessions();
         updateSessionHeader();
+        showToast("Conversation deleted.", "success");
     } catch (error) {
         console.error("Failed to delete chat:", error);
+        showToast("Failed to delete the conversation.", "error");
     }
 }
 
@@ -387,7 +429,7 @@ async function clearCurrentChat() {
         return;
     }
     try {
-        await fetch(
+        await apiFetch(
             `/api/chat/session?session_id=${encodeURIComponent(state.currentSessionId)}`,
             { method: "DELETE" }
         );
@@ -395,8 +437,10 @@ async function clearCurrentChat() {
         renderMessages([]);
         await loadChatSessions();
         updateSessionHeader();
+        showToast("Chat cleared.", "success");
     } catch (error) {
         console.error("Failed to clear chat:", error);
+        showToast("Failed to clear the conversation.", "error");
     }
 }
 
@@ -448,6 +492,68 @@ function updateSessionHeader() {
     dom.sessionUpdatedAt.textContent = `Last updated ${formatRelativeTime(current.updated_at)}`;
 }
 
+function startRenameSession() {
+    const current = state.sessions.find(
+        (session) => session.session_id === state.currentSessionId
+    );
+    if (!current) {
+        return;
+    }
+
+    const wrapper = dom.sessionTitle.parentElement;
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "rename-input";
+    input.value = current.title || "";
+    input.maxLength = 80;
+
+    dom.sessionTitle.style.display = "none";
+    wrapper.insertBefore(input, dom.sessionTitle);
+    input.focus();
+    input.select();
+
+    const commit = () => commitRenameSession(input, current.session_id);
+    input.addEventListener("blur", commit);
+    input.addEventListener("keydown", (event) => {
+        if (event.key === "Enter") {
+            input.blur();
+        }
+        if (event.key === "Escape") {
+            input.value = current.title || "";
+            input.blur();
+        }
+    });
+}
+
+async function commitRenameSession(input, sessionId) {
+    const title = input.value.trim();
+    input.remove();
+
+    dom.sessionTitle.style.display = "";
+
+    if (!title || !sessionId || title === dom.sessionTitle.textContent) {
+        return;
+    }
+
+    try {
+        const res = await apiFetch(`/api/chat/sessions/${encodeURIComponent(sessionId)}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ title }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+            throw new Error(data.error || "Failed to rename");
+        }
+        dom.sessionTitle.textContent = title;
+        await loadChatSessions();
+        showToast("Session renamed.", "success");
+    } catch (error) {
+        console.error("Failed to rename session:", error);
+        showToast("Failed to rename session.", "error");
+    }
+}
+
 async function sendMessage() {
     const message = (dom.messageInput.value || "").trim();
     if (!message || state.sending) {
@@ -465,7 +571,6 @@ async function sendMessage() {
     autoResizeInput();
     updateSendButtonState();
 
-    const typingId = showTypingIndicator();
     const selectedReadyIds = Array.from(state.selectedFileIds).filter((id) => {
         const file = state.files.find((entry) => entry.id === id);
         return file && file.status === "ready";
@@ -475,15 +580,155 @@ async function sendMessage() {
         : state.files.filter((file) => file.status === "ready").map((file) => file.id);
     const historyToSend = state.history.slice(0, -1).slice(-12);
 
+    const ok = await sendMessageStreaming(message, contextIds, historyToSend);
+    if (!ok) {
+        await sendMessageNonStreaming(message, contextIds, historyToSend);
+    }
+}
+
+async function sendMessageStreaming(question, contextIds, historyToSend) {
+    const typingId = showTypingIndicator();
+
     try {
         const controller = new AbortController();
         const timer = setTimeout(() => controller.abort(), 120000);
 
-        const res = await fetch("/api/chat", {
+        const res = await apiFetch("/api/chat/stream", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-                question: message,
+                question,
+                session_id: state.currentSessionId,
+                file_ids: contextIds,
+                history: historyToSend,
+            }),
+            signal: controller.signal,
+        });
+        clearTimeout(timer);
+
+        if (!res.ok) {
+            removeTypingIndicator(typingId);
+            return false;
+        }
+
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = "";
+        let botMessage = "";
+        let result = null;
+        const botId = `stream_${Date.now()}`;
+
+        removeTypingIndicator(typingId);
+        appendMessage("bot", "", [], botId);
+        const botEl = document.getElementById(botId);
+        const botBubble = botEl?.querySelector(".message-bubble");
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) {
+                break;
+            }
+            buffer += decoder.decode(value, { stream: true });
+            const parts = buffer.split("\n\n");
+            buffer = parts.pop() || "";
+
+            for (const part of parts) {
+                const lines = part.split("\n");
+                let eventType = "";
+                let data = "";
+
+                for (const line of lines) {
+                    if (line.startsWith("event: ")) {
+                        eventType = line.slice(7).trim();
+                    } else if (line.startsWith("data: ")) {
+                        data = line.slice(6).trim();
+                    }
+                }
+
+                if (!data) {
+                    continue;
+                }
+
+                if (eventType === "token") {
+                    botMessage += data;
+                    if (botBubble) {
+                        botBubble.innerHTML = DOMPurify.sanitize(marked.parse(botMessage || ""));
+                    }
+                } else if (eventType === "done") {
+                    try {
+                        result = JSON.parse(data);
+                    } catch {
+                        result = null;
+                    }
+                } else if (eventType === "error") {
+                    try {
+                        const errData = JSON.parse(data);
+                        result = { error: errData.message || "Stream error" };
+                    } catch {
+                        result = { error: data };
+                    }
+                }
+            }
+        }
+
+        if (result && result.response) {
+            const finalSources = result.sources || [];
+            if (botBubble) {
+                botBubble.innerHTML = DOMPurify.sanitize(marked.parse(result.response || ""));
+            }
+            appendCitations(botId, finalSources, result);
+            state.history.push({ role: "assistant", content: result.response });
+
+            if (result.session_id && result.session_id !== state.currentSessionId) {
+                state.currentSessionId = result.session_id;
+                sessionStorage.setItem("current_chat_session", state.currentSessionId);
+            }
+
+            await loadChatSessions();
+            updateSessionHeader();
+            return true;
+        }
+
+        if (result && result.error) {
+            if (botBubble) {
+                botBubble.textContent = result.error;
+            }
+            state.history.push({ role: "assistant", content: result.error });
+            return true;
+        }
+
+        if (botMessage) {
+            state.history.push({ role: "assistant", content: botMessage });
+            return true;
+        }
+
+        return false;
+    } catch (error) {
+        removeTypingIndicator(typingId);
+        if (error.name === "AbortError") {
+            appendMessage("bot", "The request timed out. Please try again.", []);
+            state.history.push({ role: "assistant", content: "The request timed out. Please try again." });
+            return true;
+        }
+        return false;
+    } finally {
+        state.sending = false;
+        updateSendButtonState();
+    }
+}
+
+async function sendMessageNonStreaming(question, contextIds, historyToSend) {
+    const typingId = showTypingIndicator();
+
+    try {
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 120000);
+
+        const res = await apiFetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                question,
                 session_id: state.currentSessionId,
                 file_ids: contextIds,
                 history: historyToSend,
@@ -521,32 +766,17 @@ async function sendMessage() {
     }
 }
 
-function appendMessage(role, text, sources = []) {
+function appendMessage(role, text, sources = [], id = "") {
     const wrapper = document.createElement("div");
     wrapper.className = `message ${role}`;
+    if (id) {
+        wrapper.id = id;
+    }
 
     const body =
         role === "bot"
             ? DOMPurify.sanitize(marked.parse(text || ""))
             : escapeHtml(text || "").replace(/\n/g, "<br>");
-
-    const citations =
-        role === "bot" && sources.length
-            ? `
-                <div class="message-citations">
-                    ${sources
-                        .map(
-                            (source, index) => `
-                                <button class="citation-chip" data-action="open-citation" data-source-index="${index}">
-                                    <i class="fas fa-file-alt"></i>
-                                    ${escapeHtml(source.name || "Source")}
-                                </button>
-                            `
-                        )
-                        .join("")}
-                </div>
-            `
-            : "";
 
     wrapper.innerHTML = `
         <div class="message-avatar">
@@ -554,16 +784,53 @@ function appendMessage(role, text, sources = []) {
         </div>
         <div class="message-content">
             <div class="message-bubble">${body}</div>
-            ${citations}
         </div>
     `;
 
     if (sources.length) {
         wrapper.dataset.sources = JSON.stringify(sources);
+        appendCitations(wrapper, sources);
     }
 
     dom.messages.appendChild(wrapper);
     scrollMessagesToBottom();
+}
+
+function appendCitations(wrapperOrId, sources, result) {
+    const wrapper = typeof wrapperOrId === "string" ? document.getElementById(wrapperOrId) : wrapperOrId;
+    if (!wrapper) {
+        return;
+    }
+
+    let existing = wrapper.querySelector(".message-citations");
+    if (existing) {
+        existing.remove();
+    }
+
+    if (!sources.length) {
+        return;
+    }
+
+    wrapper.dataset.sources = JSON.stringify(result?.sources || sources);
+
+    const contentDiv = wrapper.querySelector(".message-content");
+    if (!contentDiv) {
+        return;
+    }
+
+    const citations = document.createElement("div");
+    citations.className = "message-citations";
+    citations.innerHTML = sources
+        .map(
+            (source, index) => `
+                <button class="citation-chip" data-action="open-citation" data-source-index="${index}">
+                    <i class="fas fa-file-alt"></i>
+                    ${escapeHtml(source.name || "Source")}
+                </button>
+            `
+        )
+        .join("");
+    contentDiv.appendChild(citations);
 }
 
 function showTypingIndicator() {
@@ -774,7 +1041,7 @@ function handleFilesListClick(event) {
 
 async function removeFile(fileId) {
     try {
-        const res = await fetch("/api/remove", {
+        const res = await apiFetch("/api/remove", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ file_id: fileId }),
@@ -787,6 +1054,7 @@ async function removeFile(fileId) {
         await loadFiles();
     } catch (error) {
         console.error("Failed to remove file:", error);
+        showToast("Failed to remove the file.", "error");
     }
 }
 
@@ -859,7 +1127,7 @@ async function uploadSingleFile(file) {
     const timeoutId = setTimeout(() => controller.abort(), 120000);
 
     try {
-        const res = await fetch("/api/upload", {
+        const res = await apiFetch("/api/upload", {
             method: "POST",
             body: formData,
             signal: controller.signal,
@@ -909,6 +1177,7 @@ async function loadOneDriveStatus() {
         }
     } catch (error) {
         console.error("Failed to load OneDrive status:", error);
+        showToast("Failed to check OneDrive connection.", "error");
     }
 }
 
@@ -948,7 +1217,7 @@ function renderOneDriveStatus() {
 
 async function disconnectOneDrive() {
     try {
-        await fetch("/onedrive/disconnect", { method: "POST" });
+        await apiFetch("/onedrive/disconnect", { method: "POST" });
         state.oneDrive.connected = false;
         state.oneDrive.user = "";
         state.oneDrive.email = "";
@@ -960,6 +1229,7 @@ async function disconnectOneDrive() {
         renderOneDriveFiles();
     } catch (error) {
         console.error("Failed to disconnect OneDrive:", error);
+        showToast("Failed to disconnect OneDrive.", "error");
     }
 }
 
@@ -996,6 +1266,7 @@ async function loadOneDriveFiles(folderId = "root", resetStack = false) {
         updateOneDrivePathLabel();
     } catch (error) {
         console.error("Failed to load OneDrive files:", error);
+        showToast("Failed to load OneDrive folder.", "error");
     } finally {
         state.oneDrive.loading = false;
         renderOneDriveFiles();
@@ -1134,7 +1405,7 @@ async function importSelectedOneDriveFiles() {
             percent: 35,
         });
 
-        const res = await fetch("/api/onedrive/import", {
+        const res = await apiFetch("/api/onedrive/import", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ files: items }),
@@ -1209,7 +1480,7 @@ function formatRelativeTime(timestampSeconds) {
     if (!timestampMs) {
         return "just now";
     }
-    const diffMs = timestampMs - Date.now();
+    const diffMs = Date.now() - timestampMs;
     const diffSec = Math.round(diffMs / 1000);
     const rtf = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
 
@@ -1242,6 +1513,90 @@ function safeJson(value, fallback) {
     } catch {
         return fallback;
     }
+}
+
+function showToast(message, type = "info", duration = 3500) {
+    const container = document.getElementById("toastContainer");
+    if (!container) {
+        return;
+    }
+
+    const icons = { success: "fa-check-circle", error: "fa-circle-exclamation", info: "fa-info-circle" };
+    const el = document.createElement("div");
+    el.className = `toast ${type}`;
+    el.innerHTML = `<i class="fas ${icons[type] || icons.info} toast-icon"></i>${escapeHtml(message)}`;
+    container.appendChild(el);
+
+    setTimeout(() => {
+        el.style.animation = "toastOut 0.25s ease forwards";
+        setTimeout(() => el.remove(), 300);
+    }, duration);
+}
+
+function applyDarkModePreference() {
+    const stored = localStorage.getItem("documind-theme");
+    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
+    const useDark = stored ? stored === "dark" : prefersDark;
+
+    document.documentElement.setAttribute("data-theme", useDark ? "dark" : "light");
+
+    if (dom.darkModeToggle) {
+        dom.darkModeToggle.innerHTML = useDark
+            ? '<i class="fas fa-sun"></i>'
+            : '<i class="fas fa-moon"></i>';
+    }
+}
+
+function toggleDarkMode() {
+    const current = document.documentElement.getAttribute("data-theme");
+    const newTheme = current === "dark" ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", newTheme);
+    localStorage.setItem("documind-theme", newTheme);
+
+    if (dom.darkModeToggle) {
+        dom.darkModeToggle.innerHTML = newTheme === "dark"
+            ? '<i class="fas fa-sun"></i>'
+            : '<i class="fas fa-moon"></i>';
+    }
+}
+
+let dragCounter = 0;
+
+function handleDragOver(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    dom.dropOverlay?.classList.add("show");
+}
+
+function handleDragLeave(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    dom.dropOverlay?.classList.remove("show");
+}
+
+function handleDrop(event) {
+    event.preventDefault();
+    event.stopPropagation();
+    dom.dropOverlay?.classList.remove("show");
+
+    const files = Array.from(event.dataTransfer?.files || []);
+    if (!files.length) {
+        return;
+    }
+
+    const allowedExts = new Set(["pdf", "docx", "doc", "xlsx", "xls", "csv", "txt"]);
+    const valid = files.filter((file) => allowedExts.has(getExtension(file.name)));
+
+    if (!valid.length) {
+        showToast("Unsupported file type. Accepted: PDF, DOCX, XLSX, CSV, TXT", "error");
+        return;
+    }
+
+    if (valid.length < files.length) {
+        showToast(`${files.length - valid.length} file(s) skipped (unsupported format)`, "info");
+    }
+
+    handleFileUpload(valid);
 }
 
 async function runWithConcurrency(items, concurrency, worker) {

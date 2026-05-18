@@ -5,8 +5,9 @@ Adds conversation memory: the frontend sends the last N turns as `history`,
 which gets injected into the Gemini prompt so the AI remembers context.
 """
 
+import json
 import time
-from flask import Blueprint, request, jsonify
+from flask import Blueprint, request, jsonify, Response, stream_with_context
 from app.auth_helpers import login_required
 from app.config import RAGConfig
 from app.services.persistence import (
@@ -21,7 +22,7 @@ from app.services.persistence import (
     update_chat_session_title,
 )
 from app.services.rag import get_store, get_registry, _user_key
-from app.services.gemini import GeminiServiceError, generate_answer
+from app.services.gemini import GeminiServiceError, generate_answer, generate_answer_stream
 from app.services.vector_store import EmbeddingServiceError
 
 chat_bp = Blueprint("chat", __name__)
@@ -221,7 +222,7 @@ def api_chat():
             if content:
                 lines.append(f"{role}: {content}")
         if lines:
-            history_block = "CONVERSATION HISTORY (most recent first):\n" + "\n".join(lines) + "\n\n"
+            history_block = "CONVERSATION HISTORY:\n" + "\n".join(lines) + "\n\n"
 
     # ── Build final prompt ────────────────────────────────────────────────
     prompt = f"""You are DocuMind, an expert document analyst AI.
@@ -288,3 +289,135 @@ ANSWER:"""
     )
     response["session_id"] = chat_session["session_id"]
     return jsonify(response)
+
+
+@chat_bp.route("/api/chat/stream", methods=["POST"])
+@login_required
+def api_chat_stream():
+    data     = request.json or {}
+    question = data.get("question", "").strip()
+    file_ids = data.get("file_ids", [])
+    session_id = (data.get("session_id") or "").strip() or None
+    history  = data.get("history", [])
+
+    if not question:
+        return jsonify({"error": "No question provided"}), 400
+
+    user_key = _user_key()
+    chat_session = _resolve_session(user_key, session_id)
+    if session_id and not chat_session:
+        return jsonify({"error": "Session not found"}), 404
+
+    store    = get_store()
+    registry = get_registry()
+    indexed_file_ids = store.indexed_file_ids()
+
+    if not indexed_file_ids:
+        msg = (
+            "Your saved files are not searchable right now. Re-upload them to rebuild the index, then ask again."
+            if registry else
+            "No documents indexed yet. Upload local files or import from OneDrive first."
+        )
+        return jsonify({"response": msg})
+
+    source_filter = (
+        [fid for fid in file_ids if fid in registry and fid in indexed_file_ids]
+        if file_ids else None
+    )
+
+    if file_ids and not source_filter:
+        return jsonify({
+            "response": "The selected files are not indexed yet. Re-upload them to rebuild the index, or clear the selection and use files that are ready."
+        })
+
+    try:
+        top_chunks = store.search(
+            question, top_k=RAGConfig.TOP_K, source_filter=source_filter
+        )
+    except EmbeddingServiceError as exc:
+        return jsonify({"error": str(exc)}), 503
+
+    if not top_chunks:
+        return jsonify({
+            "response": "Couldn't find relevant information in the indexed documents."
+        })
+
+    context = "\n\n".join(
+        f"--- Source: {c['source']} (chunk {c['chunk_index']}) ---\n{c['text']}"
+        for c in top_chunks
+    )
+
+    recent = history[-(MAX_HISTORY_TURNS * 2):]
+    history_block = ""
+    if recent:
+        lines = []
+        for msg in recent:
+            role    = "User"      if msg.get("role") == "user"      else "Assistant"
+            content = msg.get("content", "").strip()
+            if content:
+                lines.append(f"{role}: {content}")
+        if lines:
+            history_block = "CONVERSATION HISTORY:\n" + "\n".join(lines) + "\n\n"
+
+    prompt = f"""You are DocuMind, an expert document analyst AI.
+
+{history_block}DOCUMENT EXCERPTS (use these as your primary source of truth):
+{context}
+
+INSTRUCTIONS:
+- Answer using ONLY the document excerpts above.
+- If the conversation history provides relevant context, use it to give a more coherent answer.
+- Be concise and accurate. Cite the source filename when relevant.
+- If the answer is not in the documents, say so clearly.
+- Use markdown formatting: bullet points, bold, tables, and code blocks where they improve clarity.
+
+CURRENT QUESTION: {question}
+
+ANSWER:"""
+
+    source_payload = _build_source_payload(top_chunks, registry)
+    full_response = []
+    sid = chat_session["session_id"]
+
+    def generate():
+        saw_first_token = False
+        try:
+            for token in generate_answer_stream(prompt):
+                if not saw_first_token:
+                    saw_first_token = True
+                full_response.append(token)
+                yield f"event: token\ndata: {token}\n\n"
+
+            if not saw_first_token:
+                yield f"event: done\ndata: {json.dumps({'response': '', 'sources': source_payload, 'chunks_used': len(top_chunks), 'session_id': sid})}\n\n"
+                return
+
+            answer = "".join(full_response)
+            append_chat_message(user_key, "user", question, session_id=sid)
+            append_chat_message(user_key, "assistant", answer, sources=source_payload, session_id=sid)
+
+            done_data = json.dumps({
+                "response": answer,
+                "sources": source_payload,
+                "chunks_used": len(top_chunks),
+                "session_id": sid,
+            })
+            yield f"event: done\ndata: {done_data}\n\n"
+
+        except GeminiServiceError:
+            fallback = _fallback_response(
+                top_chunks, registry,
+                "[Gemini temporarily unavailable. Showing the top retrieved passage instead.]"
+            )
+            yield f"event: done\ndata: {json.dumps({**fallback, 'session_id': sid})}\n\n"
+        except Exception as exc:
+            yield f"event: error\ndata: {json.dumps({'message': str(exc)})}\n\n"
+
+    return Response(
+        stream_with_context(generate()),
+        mimetype="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )

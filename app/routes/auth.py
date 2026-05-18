@@ -7,8 +7,11 @@ from flask import (
     redirect,
     url_for,
 )
+from werkzeug.security import check_password_hash
+from flask_wtf.csrf import generate_csrf
 from app.auth_helpers import login_required
 from app.config import AuthConfig
+from app.services.persistence import create_user, get_user_by_email
 from app.services.rag import cleanup_user_store
 
 auth_bp = Blueprint("auth", __name__)
@@ -26,11 +29,25 @@ def api_login():
     data = request.json or {}
     email = data.get("email", "").strip().lower()
     password = data.get("password", "")
-    if AuthConfig.USERS.get(email) == password:
+
+    user = get_user_by_email(email)
+    if user and check_password_hash(user["password_hash"], password):
+        generate_csrf()
+        session.permanent = True
         session["user"] = email
         session["username"] = email.split("@")[0]
         session.pop("user_key", None)
         return jsonify({"success": True, "username": session["username"]})
+
+    if email in AuthConfig.USERS and AuthConfig.USERS[email] == password:
+        create_user(email, password)
+        generate_csrf()
+        session.permanent = True
+        session["user"] = email
+        session["username"] = email.split("@")[0]
+        session.pop("user_key", None)
+        return jsonify({"success": True, "username": session["username"]})
+
     return jsonify({"success": False, "error": "Invalid credentials"}), 401
 
 

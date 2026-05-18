@@ -1,6 +1,7 @@
 # Web framework
 flask>=3.0
 flask-session>=0.6
+flask-wtf>=1.2
 python-dotenv>=1.0
 
 # AI

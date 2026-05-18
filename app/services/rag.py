@@ -14,7 +14,7 @@ import time
 import uuid
 import hashlib
 
-from flask import session
+from flask import session, g
 
 from app.services.persistence import (
     delete_document,
@@ -67,20 +67,47 @@ def _clear_legacy_registry(user_key: str):
 # ── Per-request helpers ───────────────────────────────────────────────────
 
 
+def _clear_request_cache():
+    for key in ("user_key_cache", "registry_cache"):
+        try:
+            g.pop(key, None)
+        except Exception:
+            pass
+
+
 def _user_key() -> str:
     """Return current user_key from session, deriving a stable one for logged-in users."""
+    try:
+        cached = getattr(g, "user_key_cache", None)
+        if cached:
+            return cached
+    except Exception:
+        pass
+
     user_key = session.get("user_key")
     if user_key:
+        try:
+            g.user_key_cache = user_key
+        except Exception:
+            pass
         return user_key
 
     user = (session.get("user") or "").strip().lower()
     if user:
         user_key = hashlib.sha256(user.encode("utf-8")).hexdigest()[:32]
         session["user_key"] = user_key
+        try:
+            g.user_key_cache = user_key
+        except Exception:
+            pass
         return user_key
 
     user_key = str(uuid.uuid4())
     session["user_key"] = user_key
+    try:
+        g.user_key_cache = user_key
+    except Exception:
+        pass
     return user_key
 
 
@@ -94,10 +121,21 @@ def get_store() -> ChromaStore:
 
 
 def get_registry() -> dict:
-    """Return the current user's file registry."""
+    """Return the current user's file registry, cached per-request."""
+    try:
+        cached = getattr(g, "registry_cache", None)
+        if cached is not None:
+            return cached
+    except Exception:
+        pass
+
     user_key = _user_key()
     registry = list_documents(user_key)
     if registry:
+        try:
+            g.registry_cache = registry
+        except Exception:
+            pass
         return registry
 
     legacy_registry = _load_registry(user_key)
@@ -105,7 +143,12 @@ def get_registry() -> dict:
         for file_id, entry in legacy_registry.items():
             save_document(user_key, file_id, entry)
         _clear_legacy_registry(user_key)
-        return list_documents(user_key)
+        registry = list_documents(user_key)
+        try:
+            g.registry_cache = registry
+        except Exception:
+            pass
+        return registry
 
     return {}
 
@@ -137,6 +180,8 @@ def register_and_index_for_user(
     Chunk text → embed → upsert into Chroma → persist registry entry.
     Returns the registry entry dict (including file_id).
     """
+    _clear_request_cache()
+
     file_id = str(uuid.uuid4())
     chunks = chunk_text(text, name, file_id)
 
@@ -159,6 +204,7 @@ def register_and_index_for_user(
 
 def remove_from_index(file_id: str) -> bool:
     """Remove a file from Chroma and the registry. Returns True on success."""
+    _clear_request_cache()
     user_key = _user_key()
     registry = get_registry()
     if file_id not in registry:
