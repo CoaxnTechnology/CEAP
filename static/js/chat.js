@@ -1,11 +1,13 @@
 const state = {
     files: [],
     selectedFileIds: new Set(),
-    filesMode: "docs",
+
     sessions: [],
     currentSessionId: sessionStorage.getItem("current_chat_session") || "",
     history: [],
     sending: false,
+    lastQuery: "",
+    lastContextIds: [],
     oneDrive: {
         enabled: false,
         connected: false,
@@ -17,6 +19,53 @@ const state = {
         items: [],
         selectedItems: new Map(),
     },
+};
+
+const FEATURES = {
+    hr: [
+        { name: "Apply Leave", desc: "Submit a leave application", icon: "fa-calendar-days", prompt: "Apply for leave" },
+        { name: "Leave Balance", desc: "Check remaining leave balance", icon: "fa-coins", prompt: "What is my leave balance?" },
+        { name: "My Leaves", desc: "List all my leave requests", icon: "fa-list", prompt: "Show my leave requests" },
+        { name: "Mark Attendance", desc: "Check-in or check-out", icon: "fa-clock", prompt: "Mark my attendance for today" },
+        { name: "Attendance Records", desc: "View attendance for a date range", icon: "fa-clipboard-list", prompt: "Show my attendance records for this month" },
+        { name: "Get Payslip", desc: "Retrieve payslip information", icon: "fa-file-invoice-dollar", prompt: "Get my payslip" },
+        { name: "HR Policy Search", desc: "Search HR policy documents", icon: "fa-book", prompt: "Search HR policy for leave policy" },
+        { name: "My Profile", desc: "View employee profile", icon: "fa-id-card", prompt: "Show my employee information" },
+        { name: "Pending Approvals", desc: "View pending approval requests", icon: "fa-hourglass-half", prompt: "Show my pending approvals" },
+        { name: "Approve/Reject", desc: "Approve or reject a request", icon: "fa-check-double", prompt: "Approve pending request" },
+        { name: "Onboard Employee", desc: "Onboard a new employee", icon: "fa-user-plus", prompt: "Onboard a new employee named" },
+        { name: "HR Report", desc: "Generate HR summary report", icon: "fa-chart-bar", prompt: "Generate an HR report" },
+        { name: "Employee Documents", desc: "List employee-related docs", icon: "fa-file-contract", prompt: "List employee documents" },
+    ],
+    accounting: [
+        { name: "Create Invoice", desc: "Create a new invoice", icon: "fa-file-invoice", prompt: "Create an invoice" },
+        { name: "Extract Invoice Data", desc: "Extract data from invoice PDF", icon: "fa-file-export", prompt: "Extract invoice data from uploaded file" },
+        { name: "List Invoices", desc: "List invoices by status", icon: "fa-list", prompt: "Show my invoices" },
+        { name: "Mark Paid", desc: "Mark an invoice as paid", icon: "fa-check", prompt: "Mark invoice as paid" },
+        { name: "Submit Expense", desc: "Submit an expense claim", icon: "fa-receipt", prompt: "Submit an expense claim" },
+        { name: "List Expenses", desc: "View expense claims", icon: "fa-list", prompt: "List my expenses" },
+        { name: "Financial Summary", desc: "Monthly financial overview", icon: "fa-chart-pie", prompt: "Show financial summary for this month" },
+        { name: "Payment Reminder", desc: "Send reminder for overdue invoice", icon: "fa-bell", prompt: "Send payment reminder for overdue invoices" },
+        { name: "Track Payments", desc: "Track payment status", icon: "fa-truck", prompt: "Track payment status" },
+        { name: "Reconcile Statement", desc: "Reconcile vendor statement", icon: "fa-scale-balanced", prompt: "Reconcile vendor statement" },
+        { name: "Accounting Entry", desc: "Create double-entry entry", icon: "fa-book", prompt: "Create an accounting entry" },
+        { name: "Audit Storage", desc: "Store document for audit", icon: "fa-shield", prompt: "Store document in audit storage" },
+    ],
+    admin: [
+        { name: "Schedule Meeting", desc: "Schedule a new meeting", icon: "fa-calendar-plus", prompt: "Schedule a meeting" },
+        { name: "List Meetings", desc: "View upcoming meetings", icon: "fa-calendar", prompt: "Show my upcoming meetings" },
+        { name: "Register Visitor", desc: "Pre-approve a visitor", icon: "fa-user", prompt: "Register a visitor" },
+        { name: "List Assets", desc: "View assets by status", icon: "fa-boxes", prompt: "List assets" },
+        { name: "Add Asset", desc: "Add new asset to inventory", icon: "fa-plus-circle", prompt: "Add a new asset" },
+        { name: "Request Supply", desc: "Request office supplies", icon: "fa-cart-plus", prompt: "Request office supplies" },
+        { name: "Check Inventory", desc: "Check supply inventory", icon: "fa-clipboard-check", prompt: "Check office supply inventory" },
+        { name: "Create Ticket", desc: "Create support ticket", icon: "fa-ticket", prompt: "Create a support ticket" },
+        { name: "List Tickets", desc: "View my tickets", icon: "fa-list", prompt: "Show my tickets" },
+        { name: "Post Announcement", desc: "Post company announcement", icon: "fa-bullhorn", prompt: "Post an announcement" },
+        { name: "View Announcements", desc: "Recent announcements", icon: "fa-newspaper", prompt: "Show recent announcements" },
+        { name: "File Document", desc: "File a document for retrieval", icon: "fa-folder-plus", prompt: "File a document" },
+        { name: "Admin Report", desc: "Generate admin summary report", icon: "fa-chart-line", prompt: "Generate an admin report" },
+    ],
 };
 
 const csrfToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute("content") || "";
@@ -44,17 +93,20 @@ async function init() {
         skel.classList.add("show");
     }
 
-    applyDarkModePreference();
-
     try {
-        await Promise.all([loadFiles(), loadChatSessions(), loadOneDriveStatus()]);
+        await loadChatSessions();
         await loadPersistedChat(state.currentSessionId);
-        switchFilesMode("docs");
         updateSessionHeader();
+        renderAllFeatures();
+        if (skel) {
+            skel.classList.remove("show");
+        }
+        Promise.resolve().then(() => {
+            loadFiles();
+        });
     } catch (error) {
         console.error("init failed:", error);
         showToast("Failed to load some data. Try refreshing the page.", "error");
-    } finally {
         if (skel) {
             skel.classList.remove("show");
         }
@@ -68,10 +120,12 @@ function cacheDom() {
     dom.mobileBackdrop = document.getElementById("mobileBackdrop");
 
     dom.sessionsPanelToggleBtn = document.getElementById("sessionsPanelToggleBtn");
+    dom.collapseSidebarBtn = document.getElementById("collapseSidebarBtn");
+    dom.collapseSidebarContentBtn = document.getElementById("collapseSidebarContentBtn");
+    dom.newChatRailBtn = document.getElementById("newChatRailBtn");
+    dom.profileRailBtn = document.getElementById("profileRailBtn");
     dom.mobileMenuBtn = document.getElementById("mobileMenuBtn");
     dom.closeMobileSidebarBtn = document.getElementById("closeMobileSidebarBtn");
-    dom.filesPanelToggleBtn = document.getElementById("filesPanelToggleBtn");
-
     dom.newChatBtn = document.getElementById("newChatBtn");
     dom.clearChatBtn = document.getElementById("clearChatBtn");
     dom.currentChatList = document.getElementById("currentChatList");
@@ -85,22 +139,12 @@ function cacheDom() {
     dom.sendBtn = document.getElementById("sendBtn");
     dom.chatUploadBtn = document.getElementById("chatUploadBtn");
     dom.selectedFilesBar = document.getElementById("selectedFilesBar");
-    dom.selectedFilesText = document.getElementById("selectedFilesText");
+    dom.selectedFilesChips = document.getElementById("selectedFilesChips");
     dom.clearFilesSelectionBtn = document.getElementById("clearFilesSelectionBtn");
 
-    dom.localPane = document.getElementById("localPane");
-    dom.oneDrivePane = document.getElementById("oneDrivePane");
-    dom.filesModeDocsBtn = document.getElementById("filesModeDocsBtn");
-    dom.filesModeOneDriveBtn = document.getElementById("filesModeOneDriveBtn");
-
     dom.fileInput = document.getElementById("fileInput");
-    dom.refreshFilesBtn = document.getElementById("refreshFilesBtn");
-    dom.filesList = document.getElementById("filesList");
-    dom.filesCount = document.getElementById("filesCount");
-    dom.filesChunks = document.getElementById("filesChunks");
-    dom.filesSelectedBar = document.getElementById("filesSelectedBar");
-    dom.filesSelectedBarText = document.getElementById("filesSelectedBarText");
-    dom.filesSelectedClearBtn = document.getElementById("filesSelectedClearBtn");
+    dom.clipDropdown = document.getElementById("clipDropdown");
+    dom.odPanelCloseBtn = document.getElementById("odPanelCloseBtn");
 
     dom.odStatusText = document.getElementById("odStatusText");
     dom.odUserText = document.getElementById("odUserText");
@@ -118,28 +162,32 @@ function cacheDom() {
     dom.uploadProgressFill = document.getElementById("uploadProgressFill");
     dom.uploadProgressText = document.getElementById("uploadProgressText");
 
-    dom.citationOverlay = document.getElementById("citationOverlay");
-    dom.citationCloseBtn = document.getElementById("citationCloseBtn");
-    dom.citationTitle = document.getElementById("citationTitle");
-    dom.citationMeta = document.getElementById("citationMeta");
-    dom.citationBody = document.getElementById("citationBody");
+    dom.filesManageBtn = document.getElementById("filesManageBtn");
+    dom.exportChatBtn = document.getElementById("exportChatBtn");
+    dom.sessionsSearchInput = document.getElementById("sessionsSearchInput");
+    dom.fmPanelCloseBtn = document.getElementById("fmPanelCloseBtn");
+    dom.fmFileList = document.getElementById("fmFileList");
 
-    dom.darkModeToggle = document.getElementById("darkModeToggle");
     dom.composerPanel = document.getElementById("composerPanel");
     dom.dropOverlay = document.getElementById("dropOverlay");
+
+    dom.fsContent = document.getElementById("fsContent");
 }
 
 function bindEvents() {
     dom.sessionsPanelToggleBtn?.addEventListener("click", toggleSessionsPanel);
-    dom.mobileMenuBtn?.addEventListener("click", () => openMobilePanel("sessions"));
+    dom.collapseSidebarBtn?.addEventListener("click", toggleSessionsPanel);
+    dom.collapseSidebarContentBtn?.addEventListener("click", toggleSessionsPanel);
+    dom.newChatRailBtn?.addEventListener("click", createNewChat);
+    dom.mobileMenuBtn?.addEventListener("click", openMobilePanel);
     dom.closeMobileSidebarBtn?.addEventListener("click", closeMobilePanels);
-    dom.filesPanelToggleBtn?.addEventListener("click", toggleFilesPanel);
     dom.mobileBackdrop?.addEventListener("click", closeMobilePanels);
 
     dom.newChatBtn?.addEventListener("click", createNewChat);
     dom.clearChatBtn?.addEventListener("click", clearCurrentChat);
     dom.currentChatList?.addEventListener("click", handleSessionListClick);
     dom.pastChatList?.addEventListener("click", handleSessionListClick);
+    dom.sessionsSearchInput?.addEventListener("input", filterSessionLists);
 
     dom.messageInput?.addEventListener("input", () => {
         autoResizeInput();
@@ -147,16 +195,11 @@ function bindEvents() {
     });
     dom.messageInput?.addEventListener("keydown", handleComposerKeydown);
     dom.sendBtn?.addEventListener("click", sendMessage);
-    dom.chatUploadBtn?.addEventListener("click", () => {
-        switchFilesMode("docs");
-        ensureFilesPanelVisible();
-        dom.fileInput?.click();
-    });
+    dom.chatUploadBtn?.addEventListener("click", toggleClipDropdown);
 
     dom.clearFilesSelectionBtn?.addEventListener("click", clearFileSelection);
+    dom.selectedFilesChips?.addEventListener("click", handleChipRemove);
     dom.filesSelectedClearBtn?.addEventListener("click", clearFileSelection);
-    dom.filesModeDocsBtn?.addEventListener("click", () => switchFilesMode("docs"));
-    dom.filesModeOneDriveBtn?.addEventListener("click", () => switchFilesMode("onedrive"));
 
     document.querySelectorAll(".prompt-chip").forEach((btn) => {
         btn.addEventListener("click", () => {
@@ -176,8 +219,10 @@ function bindEvents() {
         await handleFileUpload(files);
         dom.fileInput.value = "";
     });
-    dom.refreshFilesBtn?.addEventListener("click", loadFiles);
-    dom.filesList?.addEventListener("click", handleFilesListClick);
+
+    dom.clipDropdown?.addEventListener("click", handleClipDropdownClick);
+    dom.odPanelCloseBtn?.addEventListener("click", closeOneDrivePanel);
+    document.addEventListener("click", handleOutsideClick);
 
     dom.odDisconnectBtn?.addEventListener("click", disconnectOneDrive);
     dom.odBackBtn?.addEventListener("click", goBackOneDriveFolder);
@@ -186,16 +231,13 @@ function bindEvents() {
     );
     dom.odImportBtn?.addEventListener("click", importSelectedOneDriveFiles);
     dom.odFilesList?.addEventListener("click", handleOneDriveListClick);
+    dom.messages?.addEventListener("click", handleMessageActions);
+    dom.exportChatBtn?.addEventListener("click", exportConversation);
+    dom.filesManageBtn?.addEventListener("click", toggleFilesManagePanel);
+    dom.fmPanelCloseBtn?.addEventListener("click", closeFilesManagePanel);
+    dom.fmFileList?.addEventListener("click", handleFileManageActions);
 
-    dom.messages?.addEventListener("click", handleCitationChipClick);
-    dom.citationCloseBtn?.addEventListener("click", closeCitationModal);
-    dom.citationOverlay?.addEventListener("click", (event) => {
-        if (event.target === dom.citationOverlay) {
-            closeCitationModal();
-        }
-    });
-
-    dom.darkModeToggle?.addEventListener("click", toggleDarkMode);
+    dom.fsContent?.addEventListener("click", handleFeaturesPanelClick);
 
     dom.sessionTitle?.addEventListener("dblclick", startRenameSession);
 
@@ -224,38 +266,15 @@ function handleComposerKeydown(event) {
     }
 }
 
-function openMobilePanel(target) {
-    const isMobile = window.innerWidth <= 980;
-    if (!isMobile) {
-        return;
-    }
-
-    if (target === "sessions") {
-        dom.sessionsPanel.classList.add("open");
-        dom.filesPanel.classList.remove("open");
-    } else if (target === "files") {
-        dom.filesPanel.classList.add("open");
-        dom.sessionsPanel.classList.remove("open");
-    }
+function openMobilePanel() {
+    if (window.innerWidth > 980) return;
+    dom.sessionsPanel.classList.add("open");
     dom.mobileBackdrop.classList.add("show");
 }
 
 function closeMobilePanels() {
     dom.sessionsPanel.classList.remove("open");
-    dom.filesPanel.classList.remove("open");
     dom.mobileBackdrop.classList.remove("show");
-}
-
-function toggleFilesPanel() {
-    if (window.innerWidth <= 980) {
-        if (dom.filesPanel.classList.contains("open")) {
-            closeMobilePanels();
-        } else {
-            openMobilePanel("files");
-        }
-        return;
-    }
-    dom.appShell.classList.toggle("files-collapsed");
 }
 
 function toggleSessionsPanel() {
@@ -263,30 +282,262 @@ function toggleSessionsPanel() {
         if (dom.sessionsPanel.classList.contains("open")) {
             closeMobilePanels();
         } else {
-            openMobilePanel("sessions");
+            openMobilePanel();
         }
         return;
     }
     dom.appShell.classList.toggle("sessions-collapsed");
+    updateCollapseBtnIcon();
 }
 
-function ensureFilesPanelVisible() {
-    if (window.innerWidth <= 980) {
-        openMobilePanel("files");
+function updateCollapseBtnIcon() {
+    const collapsed = dom.appShell.classList.contains("sessions-collapsed");
+    const icon = dom.collapseSidebarBtn?.querySelector("i");
+    if (icon) {
+        icon.className = collapsed ? "fas fa-chevron-right" : "fas fa-chevron-left";
+    }
+    const icon2 = dom.collapseSidebarContentBtn?.querySelector("i");
+    if (icon2) {
+        icon2.className = collapsed ? "fas fa-chevron-right" : "fas fa-chevron-left";
+    }
+}
+
+function toggleOneDrivePane() {
+    const panel = document.getElementById("filesPanel");
+    const isOpen = panel?.classList.contains("show");
+    if (isOpen) {
+        panel?.classList.remove("show");
+    } else {
+        panel?.classList.add("show");
+        loadOneDriveStatus();
+    }
+}
+
+function closeOneDrivePanel() {
+    const panel = document.getElementById("filesPanel");
+    panel?.classList.remove("show");
+}
+
+function toggleClipDropdown(event) {
+    event.stopPropagation();
+    const showing = dom.clipDropdown?.classList.contains("show");
+    dom.clipDropdown?.classList.toggle("show", !showing);
+}
+
+function handleClipDropdownClick(event) {
+    const item = event.target.closest(".clip-dropdown-item");
+    if (!item) return;
+    dom.clipDropdown?.classList.remove("show");
+    const action = item.dataset.action;
+    if (action === "upload") {
+        dom.fileInput?.click();
+    } else if (action === "onedrive") {
+        toggleOneDrivePane();
+    }
+}
+
+function handleOutsideClick(event) {
+    const btn = document.getElementById("chatUploadBtn");
+    const dd = document.getElementById("clipDropdown");
+    if (btn && dd && !btn.contains(event.target) && !dd.contains(event.target)) {
+        dd.classList.remove("show");
+    }
+    const fmPanel = document.getElementById("filesManagePanel");
+    const fmBtn = document.getElementById("filesManageBtn");
+    if (fmPanel && fmBtn && fmPanel.classList.contains("show") && !fmPanel.contains(event.target) && !fmBtn.contains(event.target)) {
+        fmPanel.classList.remove("show");
+    }
+
+
+}
+
+function toggleFilesManagePanel() {
+    const panel = document.getElementById("filesManagePanel");
+    if (!panel) return;
+    const open = panel.classList.contains("show");
+    if (open) {
+        panel.classList.remove("show");
+    } else {
+        renderFilesManageList();
+        panel.classList.add("show");
+    }
+}
+
+function closeFilesManagePanel() {
+    document.getElementById("filesManagePanel")?.classList.remove("show");
+}
+
+function renderAllFeatures() {
+    if (!dom.fsContent) return;
+    const sectors = [
+        { key: "hr", label: "HR", icon: "fa-users" },
+        { key: "accounting", label: "Accounting", icon: "fa-calculator" },
+        { key: "admin", label: "Admin", icon: "fa-building" },
+    ];
+    dom.fsContent.innerHTML = sectors
+        .map((s, idx) => {
+            const features = FEATURES[s.key] || [];
+            const open = idx === 0 ? " open" : "";
+            return `
+                <div class="fs-group${open}" data-sector="${s.key}">
+                    <div class="fs-group-header" data-sector="${s.key}">
+                        <div class="fs-group-icon ${s.key}">
+                            <i class="fas ${s.icon}"></i>
+                        </div>
+                        <span class="fs-group-title">${s.label}</span>
+                        <button class="fs-group-toggle" data-sector="${s.key}">
+                            <i class="fas fa-chevron-right"></i>
+                        </button>
+                    </div>
+                    <div class="fs-group-body">
+                        ${features
+                            .map(
+                                (f) => `
+                                <div class="fs-feature" data-prompt="${escapeHtml(f.prompt)}">
+                                    <div class="fs-feature-icon ${s.key}">
+                                        <i class="fas ${f.icon}"></i>
+                                    </div>
+                                    <div class="fs-feature-info">
+                                        <div class="fs-feature-name">${escapeHtml(f.name)}</div>
+                                        <div class="fs-feature-desc">${escapeHtml(f.desc)}</div>
+                                    </div>
+                                </div>
+                            `
+                            )
+                            .join("")}
+                    </div>
+                </div>
+            `;
+        })
+        .join("");
+}
+
+function handleFeaturesPanelClick(event) {
+    const toggle = event.target.closest(".fs-group-header, .fs-group-toggle");
+    if (toggle) {
+        const sector = toggle.dataset.sector;
+        const group = dom.fsContent?.querySelector(`.fs-group[data-sector="${sector}"]`);
+        if (group) {
+            group.classList.toggle("open");
+        }
         return;
     }
-    dom.appShell.classList.remove("files-collapsed");
+    const feature = event.target.closest(".fs-feature");
+    if (!feature) return;
+    const prompt = feature.dataset.prompt;
+    if (!prompt) return;
+    if (dom.messageInput) {
+        dom.messageInput.value = prompt;
+        autoResizeInput();
+        updateSendButtonState();
+        sendMessage();
+    }
 }
 
-function switchFilesMode(mode) {
-    const normalized = mode === "onedrive" ? "onedrive" : "docs";
-    state.filesMode = normalized;
-    const docsMode = normalized === "docs";
+function renderFilesManageList() {
+    if (!dom.fmFileList) return;
+    if (!state.files.length) {
+        dom.fmFileList.innerHTML = `<div class="empty-state">No uploaded files yet.</div>`;
+        return;
+    }
+    dom.fmFileList.innerHTML = state.files
+        .map(
+            (file) => `
+                <div class="fm-file-item${state.selectedFileIds.has(file.id) ? " selected" : ""}" data-file-id="${file.id}">
+                    <div class="fm-file-check">
+                        <i class="fas fa-${state.selectedFileIds.has(file.id) ? "check-circle" : "circle"}"></i>
+                    </div>
+                    <div class="fm-file-icon"><i class="fas fa-file"></i></div>
+                    <div class="fm-file-info">
+                        <div class="fm-file-name" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</div>
+                        <div class="fm-file-meta">${file.status === "ready" ? "Indexed" : "Error"} · ${formatFileSize(file.size)}</div>
+                    </div>
+                    <button class="fm-file-summarize" data-file-id="${file.id}" title="Summarize this file">
+                        <i class="fas fa-file-lines"></i>
+                    </button>
+                    <button class="fm-file-delete" data-file-id="${file.id}" title="Delete file">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            `
+        )
+        .join("");
+}
 
-    dom.filesModeDocsBtn?.classList.toggle("active", docsMode);
-    dom.filesModeOneDriveBtn?.classList.toggle("active", !docsMode);
-    dom.localPane?.classList.toggle("active", docsMode);
-    dom.oneDrivePane?.classList.toggle("active", !docsMode);
+function handleFileManageActions(event) {
+    event.stopPropagation();
+    const deleteBtn = event.target.closest(".fm-file-delete");
+    if (deleteBtn) {
+        const fileId = deleteBtn.dataset.fileId;
+        if (fileId) deleteUploadedFile(fileId);
+        return;
+    }
+    const summarizeBtn = event.target.closest(".fm-file-summarize");
+    if (summarizeBtn) {
+        const fileId = summarizeBtn.dataset.fileId;
+        if (fileId) summarizeFile(fileId);
+        return;
+    }
+    const row = event.target.closest(".fm-file-item");
+    if (!row) return;
+    const fileId = row.dataset.fileId;
+    if (!fileId) return;
+    if (state.selectedFileIds.has(fileId)) {
+        state.selectedFileIds.delete(fileId);
+    } else {
+        state.selectedFileIds.add(fileId);
+    }
+    persistSelectedFiles();
+    updateSelectedFilesBar();
+    renderFilesManageList();
+}
+
+function formatFileSize(bytes) {
+    if (!bytes) return "0 B";
+    const units = ["B", "KB", "MB", "GB"];
+    let i = 0;
+    let size = bytes;
+    while (size >= 1024 && i < units.length - 1) {
+        size /= 1024;
+        i++;
+    }
+    return `${size.toFixed(1)} ${units[i]}`;
+}
+
+async function deleteUploadedFile(fileId) {
+    try {
+        const res = await apiFetch("/api/remove", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ file_id: fileId }),
+        });
+        const data = await res.json();
+        if (!res.ok || !data.success) {
+            throw new Error(data.error || "Delete failed");
+        }
+        state.files = state.files.filter((f) => f.id !== fileId);
+        state.selectedFileIds.delete(fileId);
+        persistSelectedFiles();
+        updateSelectedFilesBar();
+        renderFilesManageList();
+        showToast("File deleted", "success");
+    } catch (error) {
+        showToast(error.message || "Failed to delete file", "error");
+    }
+}
+
+function summarizeFile(fileId) {
+    state.selectedFileIds.clear();
+    state.selectedFileIds.add(fileId);
+    persistSelectedFiles();
+    updateSelectedFilesBar();
+    closeFilesManagePanel();
+    if (dom.messageInput) {
+        dom.messageInput.value = "Summarize this document in detail with key bullet points.";
+        autoResizeInput();
+        updateSendButtonState();
+        dom.messageInput.focus();
+    }
 }
 
 async function createNewChat() {
@@ -337,7 +588,7 @@ function renderSessionLists() {
         (session) => session.session_id !== state.currentSessionId
     );
 
-    dom.currentChatList.innerHTML = current
+    dom.currentChatList.innerHTML = current 
         ? renderSessionItem(current, true)
         : `<div class="empty-state">No active session</div>`;
 
@@ -359,6 +610,20 @@ function renderSessionItem(session, active) {
             </button>
         </article>
     `;
+}
+
+function filterSessionLists() {
+    const query = (dom.sessionsSearchInput?.value || "").toLowerCase();
+    const currentItems = dom.currentChatList?.querySelectorAll(".chat-item") || [];
+    const pastItems = dom.pastChatList?.querySelectorAll(".chat-item") || [];
+    for (const item of currentItems) {
+        const title = item.querySelector(".chat-item-title")?.textContent || "";
+        item.style.display = title.toLowerCase().includes(query) ? "" : "none";
+    }
+    for (const item of pastItems) {
+        const title = item.querySelector(".chat-item-title")?.textContent || "";
+        item.style.display = title.toLowerCase().includes(query) ? "" : "none";
+    }
 }
 
 function handleSessionListClick(event) {
@@ -470,13 +735,52 @@ function renderMessages(messages) {
     }
 
     dom.welcomePanel.style.display = "none";
-    messages.forEach((message) => {
-        appendMessage(
-            message.role === "assistant" ? "bot" : "user",
-            message.content || "",
-            message.sources || []
-        );
-    });
+    const fragment = document.createDocumentFragment();
+    for (const message of messages) {
+        const role = message.role === "assistant" ? "bot" : "user";
+        const text = message.content || "";
+        const sources = message.sources || [];
+
+        const wrapper = document.createElement("div");
+        wrapper.className = `message ${role}`;
+        if (message.message_id) {
+            wrapper.id = `msg-${message.message_id}`;
+        }
+        if (sources.length) {
+            wrapper.dataset.sources = JSON.stringify(sources);
+        }
+
+        const body = role === "bot"
+            ? DOMPurify.sanitize(marked.parse(text))
+            : escapeHtml(text).replace(/\n/g, "<br>");
+
+        wrapper.innerHTML = `
+            <div class="message-avatar">
+                <i class="fas fa-${role === "bot" ? "robot" : "user"}"></i>
+            </div>
+            <div class="message-content">
+                <div class="message-bubble">${body}</div>
+            </div>
+        `;
+
+        if (role === "bot") {
+            const contentDiv = wrapper.querySelector(".message-content");
+
+            const feedbackRow = document.createElement("div");
+            feedbackRow.className = "message-actions";
+            feedbackRow.innerHTML = `
+                <button class="action-btn copy-btn" title="Copy message"><i class="fas fa-copy"></i></button>
+                <button class="action-btn regenerate-btn" title="Regenerate"><i class="fas fa-rotate"></i></button>
+                <button class="action-btn thumbs-up ${message.feedback === 1 ? "active" : ""}" data-message-id="${message.message_id || ""}" data-value="1"><i class="fas fa-thumbs-up"></i></button>
+                <button class="action-btn thumbs-down ${message.feedback === -1 ? "active" : ""}" data-message-id="${message.message_id || ""}" data-value="-1"><i class="fas fa-thumbs-down"></i></button>
+            `;
+            contentDiv.appendChild(feedbackRow);
+        }
+
+        fragment.appendChild(wrapper);
+    }
+    dom.messages.appendChild(fragment);
+    scrollMessagesToBottom();
 }
 
 function updateSessionHeader() {
@@ -554,6 +858,54 @@ async function commitRenameSession(input, sessionId) {
     }
 }
 
+function exportConversation() {
+    const history = state.history;
+    if (!history.length) {
+        showToast("No messages to export.", "info");
+        return;
+    }
+    const title = dom.sessionTitle?.textContent || "Chat";
+    const lines = [`# ${title}\n`];
+    for (const msg of history) {
+        const role = msg.role === "assistant" ? "**Assistant**" : "**You**";
+        lines.push(`### ${role}\n${msg.content}\n`);
+    }
+    const blob = new Blob([lines.join("\n")], { type: "text/markdown;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${title.replace(/[^a-zA-Z0-9 ]/g, "").trim() || "chat"}.md`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+    showToast("Conversation exported.", "success");
+}
+
+async function regenerateAnswer() {
+    const question = state.lastQuery;
+    if (!question || state.sending) return;
+
+    state.sending = true;
+    updateSendButtonState();
+
+    const lastBotMsg = dom.messages?.querySelector(".message.bot:last-of-type");
+    if (lastBotMsg) lastBotMsg.remove();
+
+    for (let i = state.history.length - 1; i >= 0; i--) {
+        if (state.history[i].role === "assistant") {
+            state.history.splice(i, 1);
+            break;
+        }
+    }
+
+    const historyToSend = state.history.slice(-12);
+    const ok = await sendMessageStreaming(question, state.lastContextIds, historyToSend);
+    if (!ok) {
+        await sendMessageNonStreaming(question, state.lastContextIds, historyToSend);
+    }
+}
+
 async function sendMessage() {
     const message = (dom.messageInput.value || "").trim();
     if (!message || state.sending) {
@@ -578,6 +930,8 @@ async function sendMessage() {
     const contextIds = selectedReadyIds.length
         ? selectedReadyIds
         : state.files.filter((file) => file.status === "ready").map((file) => file.id);
+    state.lastQuery = message;
+    state.lastContextIds = contextIds;
     const historyToSend = state.history.slice(0, -1).slice(-12);
 
     const ok = await sendMessageStreaming(message, contextIds, historyToSend);
@@ -676,7 +1030,16 @@ async function sendMessageStreaming(question, contextIds, historyToSend) {
             if (botBubble) {
                 botBubble.innerHTML = DOMPurify.sanitize(marked.parse(result.response || ""));
             }
-            appendCitations(botId, finalSources, result);
+            if (botEl && result.message_id) {
+                const actions = botEl.querySelector(".message-actions");
+                if (actions) {
+                    const feedbackHtml = `
+                        <button class="action-btn thumbs-up" data-message-id="${result.message_id}" data-value="1"><i class="fas fa-thumbs-up"></i></button>
+                        <button class="action-btn thumbs-down" data-message-id="${result.message_id}" data-value="-1"><i class="fas fa-thumbs-down"></i></button>
+                    `;
+                    actions.insertAdjacentHTML("beforeend", feedbackHtml);
+                }
+            }
             state.history.push({ role: "assistant", content: result.response });
 
             if (result.session_id && result.session_id !== state.currentSessionId) {
@@ -772,6 +1135,7 @@ function appendMessage(role, text, sources = [], id = "") {
     if (id) {
         wrapper.id = id;
     }
+    wrapper.dataset.sources = JSON.stringify(sources);
 
     const body =
         role === "bot"
@@ -787,50 +1151,19 @@ function appendMessage(role, text, sources = [], id = "") {
         </div>
     `;
 
-    if (sources.length) {
-        wrapper.dataset.sources = JSON.stringify(sources);
-        appendCitations(wrapper, sources);
+    if (role === "bot") {
+        const contentDiv = wrapper.querySelector(".message-content");
+        const feedbackRow = document.createElement("div");
+        feedbackRow.className = "message-actions";
+        feedbackRow.innerHTML = `
+            <button class="action-btn copy-btn" title="Copy message"><i class="fas fa-copy"></i></button>
+            <button class="action-btn regenerate-btn" title="Regenerate"><i class="fas fa-rotate"></i></button>
+        `;
+        contentDiv.appendChild(feedbackRow);
     }
 
     dom.messages.appendChild(wrapper);
     scrollMessagesToBottom();
-}
-
-function appendCitations(wrapperOrId, sources, result) {
-    const wrapper = typeof wrapperOrId === "string" ? document.getElementById(wrapperOrId) : wrapperOrId;
-    if (!wrapper) {
-        return;
-    }
-
-    let existing = wrapper.querySelector(".message-citations");
-    if (existing) {
-        existing.remove();
-    }
-
-    if (!sources.length) {
-        return;
-    }
-
-    wrapper.dataset.sources = JSON.stringify(result?.sources || sources);
-
-    const contentDiv = wrapper.querySelector(".message-content");
-    if (!contentDiv) {
-        return;
-    }
-
-    const citations = document.createElement("div");
-    citations.className = "message-citations";
-    citations.innerHTML = sources
-        .map(
-            (source, index) => `
-                <button class="citation-chip" data-action="open-citation" data-source-index="${index}">
-                    <i class="fas fa-file-alt"></i>
-                    ${escapeHtml(source.name || "Source")}
-                </button>
-            `
-        )
-        .join("");
-    contentDiv.appendChild(citations);
 }
 
 function showTypingIndicator() {
@@ -868,35 +1201,6 @@ function scrollMessagesToBottom() {
     }
 }
 
-function handleCitationChipClick(event) {
-    const chip = event.target.closest('[data-action="open-citation"]');
-    if (!chip) {
-        return;
-    }
-    const sourceIndex = Number(chip.dataset.sourceIndex || -1);
-    if (sourceIndex < 0) {
-        return;
-    }
-
-    const message = chip.closest(".message");
-    const sources = safeJson(message?.dataset.sources, []);
-    const source = sources[sourceIndex];
-    if (!source) {
-        return;
-    }
-
-    dom.citationTitle.textContent = source.name || "Source";
-    dom.citationMeta.textContent = `Chunk ${Number(source.chunk_index || 0) + 1} · ${
-        source.source || "local"
-    }`;
-    dom.citationBody.textContent = source.text || source.excerpt || "No excerpt available.";
-    dom.citationOverlay.classList.add("show");
-}
-
-function closeCitationModal() {
-    dom.citationOverlay.classList.remove("show");
-}
-
 async function loadFiles() {
     try {
         const res = await fetch("/api/files", { cache: "no-store" });
@@ -922,120 +1226,48 @@ async function loadFiles() {
         );
         persistSelectedFiles();
 
-        renderFilesList();
-        updateFilesStats();
         updateSelectedFilesBar();
+        renderFilesManageList();
     } catch (error) {
         console.error("Failed to load files:", error);
     }
 }
 
-function renderFilesList() {
-    if (!state.files.length) {
-        dom.filesList.innerHTML = `<div class="empty-state">No documents uploaded yet</div>`;
-        return;
-    }
-
-    dom.filesList.innerHTML = state.files
-        .map((file) => {
-            const selected = state.selectedFileIds.has(file.id);
-            const clickable = file.status === "ready";
-            const title = escapeHtml(file.name);
-
-            return `
-                <article class="file-row ${selected ? "selected" : ""}" data-file-id="${file.id}">
-                    <div class="file-icon ${file.ext}">${file.ext.toUpperCase() || "FILE"}</div>
-                    <div>
-                        <div class="file-name" title="${title}">${title}</div>
-                        <div class="file-meta">
-                            ${file.chunks} chunks · ${formatBytes(file.size)}${
-                                clickable ? "" : " · Not indexed"
-                            }
-                        </div>
-                    </div>
-                    <div class="file-actions">
-                        <div class="file-status ${file.status}" title="${file.status}"></div>
-                        <button class="file-remove-btn" data-action="remove-file" title="Remove file">
-                            <i class="fas fa-xmark"></i>
-                        </button>
-                    </div>
-                </article>
-            `;
-        })
-        .join("");
-}
-
-function updateFilesStats() {
-    const readyFiles = state.files.filter((file) => file.status === "ready");
-    const totalChunks = readyFiles.reduce((sum, file) => sum + file.chunks, 0);
-    dom.filesCount.textContent = `${readyFiles.length} document${readyFiles.length === 1 ? "" : "s"}`;
-    dom.filesChunks.textContent = `${totalChunks} chunk${totalChunks === 1 ? "" : "s"}`;
-}
-
 function updateSelectedFilesBar() {
-    const selectedCount = state.selectedFileIds.size;
-
     if (!state.selectedFileIds.size) {
         dom.selectedFilesBar.classList.remove("show");
-        dom.selectedFilesText.textContent = "No files selected";
-    } else {
-        const selected = state.files.filter((file) => state.selectedFileIds.has(file.id));
-        if (selected.length <= 2) {
-            dom.selectedFilesText.textContent = selected.map((file) => file.name).join(", ");
-        } else {
-            dom.selectedFilesText.textContent = `${selected.length} files selected`;
-        }
-        dom.selectedFilesBar.classList.add("show");
-    }
-
-    if (!dom.filesSelectedBar || !dom.filesSelectedBarText) {
         return;
     }
-    if (selectedCount) {
-        dom.filesSelectedBar.classList.add("show");
-        dom.filesSelectedBarText.textContent = `${selectedCount} selected`;
-    } else {
-        dom.filesSelectedBar.classList.remove("show");
-        dom.filesSelectedBarText.textContent = "0 selected";
-    }
+
+    const selected = state.files.filter((file) => state.selectedFileIds.has(file.id));
+    dom.selectedFilesChips.innerHTML = selected
+        .map(
+            (file) => `
+                <span class="selected-file-chip">
+                    <span class="chip-name" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</span>
+                    <button class="chip-remove" data-file-id="${file.id}" title="Remove">
+                        <i class="fas fa-xmark"></i>
+                    </button>
+                </span>
+            `
+        )
+        .join("");
+    dom.selectedFilesBar.classList.add("show");
+}
+
+function handleChipRemove(event) {
+    const btn = event.target.closest(".chip-remove");
+    if (!btn) return;
+    const fileId = btn.dataset.fileId;
+    if (!fileId) return;
+    state.selectedFileIds.delete(fileId);
+    persistSelectedFiles();
+    updateSelectedFilesBar();
 }
 
 function clearFileSelection() {
     state.selectedFileIds.clear();
     persistSelectedFiles();
-    renderFilesList();
-    updateSelectedFilesBar();
-}
-
-function handleFilesListClick(event) {
-    const removeBtn = event.target.closest('[data-action="remove-file"]');
-    const row = event.target.closest("[data-file-id]");
-    if (!row) {
-        return;
-    }
-    const fileId = row.dataset.fileId;
-    if (!fileId) {
-        return;
-    }
-
-    if (removeBtn) {
-        event.stopPropagation();
-        removeFile(fileId);
-        return;
-    }
-
-    const file = state.files.find((entry) => entry.id === fileId);
-    if (!file || file.status !== "ready") {
-        return;
-    }
-
-    if (state.selectedFileIds.has(fileId)) {
-        state.selectedFileIds.delete(fileId);
-    } else {
-        state.selectedFileIds.add(fileId);
-    }
-    persistSelectedFiles();
-    renderFilesList();
     updateSelectedFilesBar();
 }
 
@@ -1059,14 +1291,32 @@ async function removeFile(fileId) {
 }
 
 async function handleFileUpload(files) {
-    const allowedExts = new Set(["pdf", "docx", "doc", "xlsx", "xls", "csv", "txt"]);
+    const allowedExts = new Set(["pdf", "docx", "doc", "pptx", "xlsx", "xls", "csv", "txt"]);
     const valid = files.filter((file) => allowedExts.has(getExtension(file.name)));
     if (!valid.length) {
         return;
     }
 
+    const existingNames = new Set(state.files.map((f) => f.name));
+    const toUpload = [];
+    const duplicates = [];
+    for (const file of valid) {
+        if (existingNames.has(file.name)) {
+            duplicates.push(file.name);
+        } else {
+            toUpload.push(file);
+        }
+    }
+    for (const name of duplicates) {
+        showToast(`"${escapeHtml(name)}" is already uploaded`, "info");
+    }
+    if (!toUpload.length) {
+        return;
+    }
+
+    const uploadedIds = [];
     let processed = 0;
-    const total = valid.length;
+    const total = toUpload.length;
     const errors = [];
 
     setUploadProgress({
@@ -1076,7 +1326,7 @@ async function handleFileUpload(files) {
         percent: 4,
     });
 
-    await runWithConcurrency(valid, 2, async (file) => {
+    await runWithConcurrency(toUpload, 2, async (file) => {
         try {
             setUploadProgress({
                 visible: true,
@@ -1084,14 +1334,16 @@ async function handleFileUpload(files) {
                 text: file.name,
                 percent: Math.max(8, Math.round((processed / total) * 100)),
             });
-            await uploadSingleFile(file);
+            const result = await uploadSingleFile(file);
+            if (result?.file_id) {
+                uploadedIds.push(result.file_id);
+            }
         } catch (error) {
             errors.push(`${file.name}: ${error.message}`);
         } finally {
             processed += 1;
             setUploadProgress({
                 visible: true,
-                title: "Processing files...",
                 text: `${processed}/${total} completed`,
                 percent: Math.round((processed / total) * 100),
             });
@@ -1099,6 +1351,12 @@ async function handleFileUpload(files) {
     });
 
     await loadFiles();
+
+    for (const id of uploadedIds) {
+        state.selectedFileIds.add(id);
+    }
+    persistSelectedFiles();
+    updateSelectedFilesBar();
 
     if (errors.length) {
         setUploadProgress({
@@ -1318,7 +1576,78 @@ function renderOneDriveFiles() {
         .join("");
 }
 
+function handleMessageActions(event) {
+    const copyBtn = event.target.closest(".copy-btn");
+    if (copyBtn) {
+        const messageEl = copyBtn.closest(".message");
+        const bubble = messageEl?.querySelector(".message-bubble");
+        const text = bubble?.textContent || messageEl?.querySelector(".message-content")?.textContent || "";
+        const icon = copyBtn.querySelector("i");
+        const origClass = icon?.className;
+        if (icon) {
+            icon.className = "fas fa-check";
+        }
+        setTimeout(() => {
+            if (icon && origClass) icon.className = origClass;
+        }, 1500);
+
+        if (navigator.clipboard?.writeText) {
+            navigator.clipboard.writeText(text).catch(() => fallbackCopy(text));
+        } else {
+            fallbackCopy(text);
+        }
+        return;
+    }
+
+    const regenBtn = event.target.closest(".regenerate-btn");
+    if (regenBtn) {
+        regenerateAnswer();
+        return;
+    }
+
+    const thumb = event.target.closest(".thumbs-up, .thumbs-down");
+    if (!thumb) return;
+
+    const messageId = Number(thumb.dataset.messageId);
+    const value = Number(thumb.dataset.value);
+    if (!messageId) return;
+
+    const wasActive = thumb.classList.contains("active");
+    const newFeedback = wasActive ? null : value;
+
+    const siblings = thumb.closest(".message-actions")?.querySelectorAll(".thumbs-up, .thumbs-down") || [];
+    for (const btn of siblings) {
+        btn.classList.remove("active");
+    }
+
+    if (!wasActive) {
+        thumb.classList.add("active");
+    }
+
+    apiFetch("/api/chat/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ message_id: messageId, feedback: newFeedback }),
+    }).catch(() => {});
+}
+
+function fallbackCopy(text) {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    try {
+        document.execCommand("copy");
+    } catch (e) {
+        // ignored
+    }
+    document.body.removeChild(ta);
+}
+
 function handleOneDriveListClick(event) {
+    event.stopPropagation();
     const checkbox = event.target.closest('[data-action="od-select"]');
     if (checkbox) {
         const id = checkbox.dataset.itemId;
@@ -1367,6 +1696,7 @@ function handleOneDriveListClick(event) {
 
 function goBackOneDriveFolder() {
     if (state.oneDrive.folderStack.length <= 1) {
+        closeOneDrivePanel();
         return;
     }
     state.oneDrive.folderStack.pop();
@@ -1422,6 +1752,17 @@ async function importSelectedOneDriveFiles() {
         state.oneDrive.selectedItems.clear();
         updateOneDriveSelectionCounter();
         await loadFiles();
+
+        const imported = data.imported || [];
+        for (const item of imported) {
+            if (item.file_id) {
+                state.selectedFileIds.add(item.file_id);
+            }
+        }
+        console.log("OneDrive import - selectedFileIds:", [...state.selectedFileIds], "files:", state.files.length);
+        persistSelectedFiles();
+        updateSelectedFilesBar();
+        closeOneDrivePanel();
 
         setUploadProgress({
             visible: true,
@@ -1533,33 +1874,6 @@ function showToast(message, type = "info", duration = 3500) {
     }, duration);
 }
 
-function applyDarkModePreference() {
-    const stored = localStorage.getItem("documind-theme");
-    const prefersDark = window.matchMedia("(prefers-color-scheme: dark)").matches;
-    const useDark = stored ? stored === "dark" : prefersDark;
-
-    document.documentElement.setAttribute("data-theme", useDark ? "dark" : "light");
-
-    if (dom.darkModeToggle) {
-        dom.darkModeToggle.innerHTML = useDark
-            ? '<i class="fas fa-sun"></i>'
-            : '<i class="fas fa-moon"></i>';
-    }
-}
-
-function toggleDarkMode() {
-    const current = document.documentElement.getAttribute("data-theme");
-    const newTheme = current === "dark" ? "light" : "dark";
-    document.documentElement.setAttribute("data-theme", newTheme);
-    localStorage.setItem("documind-theme", newTheme);
-
-    if (dom.darkModeToggle) {
-        dom.darkModeToggle.innerHTML = newTheme === "dark"
-            ? '<i class="fas fa-sun"></i>'
-            : '<i class="fas fa-moon"></i>';
-    }
-}
-
 let dragCounter = 0;
 
 function handleDragOver(event) {
@@ -1584,11 +1898,11 @@ function handleDrop(event) {
         return;
     }
 
-    const allowedExts = new Set(["pdf", "docx", "doc", "xlsx", "xls", "csv", "txt"]);
+    const allowedExts = new Set(["pdf", "docx", "doc", "pptx", "xlsx", "xls", "csv", "txt"]);
     const valid = files.filter((file) => allowedExts.has(getExtension(file.name)));
 
     if (!valid.length) {
-        showToast("Unsupported file type. Accepted: PDF, DOCX, XLSX, CSV, TXT", "error");
+        showToast("Unsupported file type. Accepted: PDF, DOCX, PPTX, XLSX, CSV, TXT", "error");
         return;
     }
 

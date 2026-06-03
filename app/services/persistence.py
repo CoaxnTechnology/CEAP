@@ -73,7 +73,13 @@ def init_db():
 
             CREATE TABLE IF NOT EXISTS users (
                 email TEXT PRIMARY KEY,
+                full_name TEXT NOT NULL DEFAULT '',
                 password_hash TEXT NOT NULL,
+                role TEXT NOT NULL DEFAULT 'user',
+                department TEXT NOT NULL DEFAULT '',
+                employee_id TEXT NOT NULL DEFAULT '',
+                manager_email TEXT NOT NULL DEFAULT '',
+                leave_balance_json TEXT NOT NULL DEFAULT '{"annual": 20, "sick": 12, "personal": 5}',
                 created_at REAL NOT NULL
             );
 
@@ -85,6 +91,31 @@ def init_db():
             );
             """
         )
+
+        # Migration: add full_name if not present
+        try:
+            conn.execute("ALTER TABLE users ADD COLUMN full_name TEXT NOT NULL DEFAULT ''")
+        except Exception:
+            pass
+
+        # Migration: add new columns to users table
+        for col_def in [
+            ("role", "TEXT NOT NULL DEFAULT 'user'"),
+            ("department", "TEXT NOT NULL DEFAULT ''"),
+            ("employee_id", "TEXT NOT NULL DEFAULT ''"),
+            ("manager_email", "TEXT NOT NULL DEFAULT ''"),
+            ("leave_balance_json", "TEXT NOT NULL DEFAULT '{\"annual\": 20, \"sick\": 12, \"personal\": 5}'"),
+        ]:
+            try:
+                conn.execute(f"ALTER TABLE users ADD COLUMN {col_def[0]} {col_def[1]}")
+            except Exception:
+                pass
+
+        # Add feedback column to chat_messages if not present
+        try:
+            conn.execute("ALTER TABLE chat_messages ADD COLUMN feedback INTEGER DEFAULT NULL")
+        except Exception:
+            pass
 
 
 def init_users_from_config():
@@ -98,23 +129,57 @@ def init_users_from_config():
 def get_user_by_email(email: str) -> dict | None:
     with _connect() as conn:
         row = conn.execute(
-            "SELECT email, password_hash, created_at FROM users WHERE email = ?",
+            "SELECT email, full_name, password_hash, role, department, employee_id, manager_email, leave_balance_json, created_at FROM users WHERE email = ?",
             (email.strip().lower(),),
         ).fetchone()
     if not row:
         return None
-    return {"email": row["email"], "password_hash": row["password_hash"], "created_at": row["created_at"]}
+    return {
+        "email": row["email"],
+        "full_name": row["full_name"],
+        "password_hash": row["password_hash"],
+        "role": row["role"],
+        "department": row["department"],
+        "employee_id": row["employee_id"],
+        "manager_email": row["manager_email"],
+        "leave_balance_json": row["leave_balance_json"],
+        "created_at": row["created_at"],
+    }
+
+
+def update_user_role(email: str):
+    role_map = {
+        "admin": "admin",
+        "hr": "hr",
+        "accounting": "accounting",
+    }
+    email_norm = email.strip().lower()
+    prefix = email_norm.split("@")[0]
+    role = role_map.get(prefix, "user")
+    with _connect() as conn:
+        conn.execute(
+            "UPDATE users SET role = ? WHERE email = ?",
+            (role, email_norm),
+        )
+    return role
 
 
 def create_user(email: str, password: str) -> dict:
     email_norm = email.strip().lower()
     pw_hash = generate_password_hash(password)
     now = time.time()
+    full_name = email_norm.split("@")[0]
     with _connect() as conn:
-        conn.execute(
-            "INSERT OR IGNORE INTO users (email, password_hash, created_at) VALUES (?, ?, ?)",
-            (email_norm, pw_hash, now),
-        )
+        try:
+            conn.execute(
+                "INSERT OR IGNORE INTO users (email, full_name, password_hash, created_at) VALUES (?, ?, ?, ?)",
+                (email_norm, full_name, pw_hash, now),
+            )
+        except Exception:
+            conn.execute(
+                "INSERT OR IGNORE INTO users (email, password_hash, created_at) VALUES (?, ?, ?)",
+                (email_norm, pw_hash, now),
+            )
     return {"email": email_norm, "created_at": now}
 
 
@@ -349,11 +414,10 @@ def ensure_chat_session(user_key: str, session_id: str | None = None) -> dict:
 
 
 def list_chat_messages(user_key: str, session_id: str) -> list:
-    ensure_chat_session(user_key, session_id)
     with _connect() as conn:
         rows = conn.execute(
             """
-            SELECT m.role, m.content, m.sources_json, m.created_at
+            SELECT m.message_id, m.role, m.content, m.sources_json, m.feedback, m.created_at
             FROM chat_messages m
             JOIN chat_sessions s ON s.session_id = m.session_id
             WHERE s.user_key = ? AND s.session_id = ?
@@ -370,9 +434,11 @@ def list_chat_messages(user_key: str, session_id: str) -> list:
             sources = []
         messages.append(
             {
+                "message_id": row["message_id"],
                 "role": row["role"],
                 "content": row["content"],
                 "sources": sources,
+                "feedback": row["feedback"],
                 "timestamp": row["created_at"],
             }
         )
@@ -394,13 +460,14 @@ def append_chat_message(
     serialized_sources = json.dumps(sources or [])
 
     with _connect() as conn:
-        conn.execute(
+        cursor = conn.execute(
             """
             INSERT INTO chat_messages (session_id, role, content, sources_json, created_at)
             VALUES (?, ?, ?, ?, ?)
             """,
             (session["session_id"], role, content, serialized_sources, now),
         )
+        message_id = cursor.lastrowid
 
         title = session["title"]
         if role == "user" and title == DEFAULT_CHAT_TITLE:
@@ -413,6 +480,26 @@ def append_chat_message(
             WHERE session_id = ? AND user_key = ?
             """,
             (title, now, session["session_id"], user_key),
+        )
+
+    return message_id
+
+
+def set_message_feedback(message_id: int, user_key: str, feedback: int | None):
+    if feedback is not None and feedback not in (-1, 1):
+        raise ValueError("feedback must be -1, 1, or None")
+    with _connect() as conn:
+        conn.execute(
+            """
+            UPDATE chat_messages
+            SET feedback = ?
+            WHERE message_id IN (
+                SELECT m.message_id FROM chat_messages m
+                JOIN chat_sessions s ON s.session_id = m.session_id
+                WHERE m.message_id = ? AND s.user_key = ?
+            )
+            """,
+            (feedback, message_id, user_key),
         )
 
 

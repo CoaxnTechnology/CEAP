@@ -1,16 +1,19 @@
 """DocuMind — Flask application package."""
 
 import os
+import warnings
 import logging
 from logging.handlers import RotatingFileHandler
 from flask import Flask
 from flask_wtf.csrf import CSRFProtect
 from app.config import Config
+from app.db import init_db as init_sqlalchemy_db
 
 csrf = CSRFProtect()
 
 
 def create_app():
+    warnings.filterwarnings("ignore", message="resource_tracker: There appear to be .* leaked semaphore objects")
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     app = Flask(
         __name__,
@@ -31,6 +34,9 @@ def create_app():
     app.register_blueprint(files_bp)
     app.register_blueprint(onedrive_bp)
     app.register_blueprint(chat_bp)
+
+    with app.app_context():
+        init_sqlalchemy_db()
 
     csrf.init_app(app)
     csrf.exempt(auth_bp)

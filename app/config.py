@@ -38,8 +38,23 @@ class GeminiConfig:
     MODEL = "gemini-2.5-flash"
 
 
+class DBConfig:
+    URL = os.getenv("DATABASE_URL", "sqlite:///./documind.sqlite3")
+    ECHO = os.getenv("DB_ECHO", "0") == "1"
+
+
 class RAGConfig:
     CHUNK_SIZE = 800
     CHUNK_OVERLAP = 150
     TOP_K = 6
     RRF_K = 60
+
+
+class OfficeConfig:
+    OCR_ENABLED = os.getenv("OCR_ENABLED", "1") == "1"
+    SMTP_HOST = os.getenv("SMTP_HOST", "")
+    SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
+    SMTP_USER = os.getenv("SMTP_USER", "")
+    SMTP_PASS = os.getenv("SMTP_PASS", "")
+    SMTP_FROM = os.getenv("SMTP_FROM", "noreply@documind.ai")
+    NOTIFICATIONS_ENABLED = os.getenv("NOTIFICATIONS_ENABLED", "1") == "1"

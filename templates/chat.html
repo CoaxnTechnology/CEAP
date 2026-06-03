@@ -12,47 +12,72 @@
 <body>
     <div class="app-shell">
         <aside class="sessions-panel" id="sessionsPanel">
-            <div class="sessions-header">
-                <div class="brand-mark">
-                    <span class="brand-badge">DM</span>
-                    <div class="brand-copy">
-                        <strong>DocuMind</strong>
-                        <small>Enterprise Assistant</small>
+            <div class="sidebar-rail">
+                <button class="rail-btn" id="collapseSidebarBtn" title="Collapse sidebar">
+                    <i class="fas fa-chevron-left"></i>
+                </button>
+                <button class="rail-btn" id="newChatRailBtn" title="New Chat">
+                    <i class="fas fa-plus"></i>
+                </button>
+                <div class="rail-spacer"></div>
+                <div class="rail-avatar" id="profileRailBtn" title="{{ username }}">
+                    {{ username[0]|upper }}
+                </div>
+            </div>
+            <div class="sidebar-content">
+                <div class="sessions-header">
+                    <div class="brand-mark">
+                        <span class="brand-badge">DM</span>
+                        <div class="brand-copy">
+                            <strong>DocuMind</strong>
+                            <small>Enterprise Assistant</small>
+                        </div>
+                    </div>
+                    <div class="header-actions">
+                        <button class="icon-btn icon-btn-sm desktop-only" id="collapseSidebarContentBtn" title="Collapse sidebar">
+                            <i class="fas fa-chevron-left"></i>
+                        </button>
+                        <button class="icon-btn mobile-only" id="closeMobileSidebarBtn" title="Close sidebar">
+                            <i class="fas fa-xmark"></i>
+                        </button>
                     </div>
                 </div>
-                <button class="icon-btn mobile-only" id="closeMobileSidebarBtn" title="Close sidebar">
-                    <i class="fas fa-xmark"></i>
+
+                <button class="primary-btn" id="newChatBtn">
+                    <i class="fas fa-plus"></i>
+                    New Chat
                 </button>
-            </div>
 
-            <button class="primary-btn" id="newChatBtn">
-                <i class="fas fa-plus"></i>
-                New Chat
-            </button>
+                <div class="features-group">
+                    <div class="features-list" id="fsContent"></div>
+                </div>
 
-            <div class="sessions-group">
-                <h4>Current Chat</h4>
-                <div class="chat-list current" id="currentChatList"></div>
-            </div>
+                <div class="sessions-search">
+                    <i class="fas fa-search sessions-search-icon"></i>
+                    <input type="text" id="sessionsSearchInput" placeholder="Search chats..." autocomplete="off">
+                </div>
 
-            <div class="sessions-group">
-                <h4>Past Chats</h4>
-                <div class="chat-list past" id="pastChatList"></div>
-            </div>
+                <div class="sessions-group">
+                    <h4>Current Chat</h4>
+                    <div class="chat-list current" id="currentChatList"></div>
+                </div>
 
-            <div class="sessions-footer">
-                <div class="user-pill">
-                    <div class="user-avatar">{{ username[0]|upper }}</div>
-                    <div class="user-meta">
-                        <strong>{{ username }}</strong>
-                        <small>Workspace user</small>
+                <div class="sessions-group">
+                    <h4>Past Chats</h4>
+                    <div class="chat-list past" id="pastChatList"></div>
+                </div>
+
+                <div class="sessions-footer">
+                    <div class="user-pill">
+                        <div class="user-avatar">{{ username[0]|upper }}</div>
+                        <div class="user-meta">
+                            <strong>{{ username }}</strong>
+                            <small>Workspace user</small>
+                        </div>
+                        <a href="/logout" class="icon-btn" title="Logout">
+                            <i class="fas fa-sign-out-alt"></i>
+                        </a>
                     </div>
-                    <a href="/logout" class="icon-btn" title="Logout">
-                        <i class="fas fa-sign-out-alt"></i>
-                    </a>
-                    <button class="icon-btn" id="darkModeToggle" title="Toggle dark mode">
-                        <i class="fas fa-moon"></i>
-                    </button>
                 </div>
             </div>
         </aside>
@@ -86,9 +111,7 @@
 
         <header class="workspace-topbar">
                 <div class="topbar-left">
-                    <button class="icon-btn desktop-only" id="sessionsPanelToggleBtn" title="Toggle chats sidebar">
-                        <i class="fas fa-columns"></i>
-                    </button>
+
                     <button class="icon-btn mobile-only" id="mobileMenuBtn" title="Open sidebar">
                         <i class="fas fa-bars"></i>
                     </button>
@@ -98,9 +121,11 @@
                     </div>
                 </div>
                 <div class="topbar-right">
-                    <button class="icon-btn files-toggle-btn" id="filesPanelToggleBtn" title="Toggle files panel">
+                    <button class="icon-btn" id="exportChatBtn" title="Export conversation">
+                        <i class="fas fa-download"></i>
+                    </button>
+                    <button class="icon-btn" id="filesManageBtn" title="Manage files">
                         <i class="fas fa-folder-open"></i>
-                        <span>Files</span>
                     </button>
                     <button class="ghost-btn danger" id="clearChatBtn">
                         <i class="fas fa-trash"></i>
@@ -112,26 +137,34 @@
             <section class="chat-stage">
                 <div class="welcome-panel" id="welcomePanel">
                     <div class="welcome-badge">
-                        <i class="fas fa-comments"></i>
+                        <i class="fas fa-building"></i>
                     </div>
-                    <h2>How can I help with your documents today?</h2>
-                    <p>Upload files or import from OneDrive, select relevant sources, then ask questions for concise grounded answers.</p>
+                    <h2>How can I help your business today?</h2>
+                    <p>I can handle HR, Accounting, and Admin tasks — or answer questions from your uploaded documents. Browse features in the right panel.</p>
                     <div class="quick-prompts">
-                        <button class="prompt-chip" data-prompt="Summarize the selected document in key bullets.">
-                            <i class="fas fa-list"></i>
-                            Summarize
+                        <button class="prompt-chip" data-prompt="Apply for annual leave from tomorrow for 3 days">
+                            <i class="fas fa-calendar-days"></i>
+                            Apply Leave
                         </button>
-                        <button class="prompt-chip" data-prompt="What are the critical action items and deadlines?">
-                            <i class="fas fa-lightbulb"></i>
-                            Action Items
+                        <button class="prompt-chip" data-prompt="What is my leave balance?">
+                            <i class="fas fa-coins"></i>
+                            Leave Balance
                         </button>
-                        <button class="prompt-chip" data-prompt="Find the section that discusses implementation constraints.">
-                            <i class="fas fa-search"></i>
-                            Find Section
+                        <button class="prompt-chip" data-prompt="Schedule a meeting tomorrow at 10am for 1 hour">
+                            <i class="fas fa-calendar-plus"></i>
+                            Schedule Meeting
                         </button>
-                        <button class="prompt-chip" data-prompt="Compare options mentioned in the selected files.">
-                            <i class="fas fa-exchange-alt"></i>
-                            Compare
+                        <button class="prompt-chip" data-prompt="Create an invoice for Acme Corp for $500">
+                            <i class="fas fa-file-invoice"></i>
+                            Create Invoice
+                        </button>
+                        <button class="prompt-chip" data-prompt="Show my pending approvals">
+                            <i class="fas fa-hourglass-half"></i>
+                            Approvals
+                        </button>
+                        <button class="prompt-chip" data-prompt="Create a support ticket for IT issue">
+                            <i class="fas fa-ticket"></i>
+                            Create Ticket
                         </button>
                     </div>
                 </div>
@@ -143,99 +176,95 @@
                 <div class="drop-overlay" id="dropOverlay">
                     <i class="fas fa-cloud-upload-alt"></i>
                     <p>Drop files to upload &amp; index</p>
-                    <small>PDF, DOCX, XLSX, CSV, TXT supported</small>
+                    <small>PDF, DOCX, PPTX, XLSX, CSV, TXT supported</small>
                 </div>
 
                 <div class="selected-files-bar" id="selectedFilesBar">
-                    <span id="selectedFilesText">No files selected</span>
-                    <button class="ghost-btn small" id="clearFilesSelectionBtn">Clear Selection</button>
+                    <div class="selected-files-chips" id="selectedFilesChips"></div>
+                    <button class="ghost-btn small" id="clearFilesSelectionBtn">Clear</button>
                 </div>
 
-                <div class="composer-row">
-                    <button class="icon-btn composer-upload-btn" id="chatUploadBtn" title="Upload files">
-                        <i class="fas fa-paperclip"></i>
-                    </button>
-                    <textarea id="messageInput" placeholder="Ask a question about your selected files..." rows="1"></textarea>
-                    <button class="send-btn" id="sendBtn" disabled>
-                        <i class="fas fa-paper-plane"></i>
-                    </button>
+                <div class="composer-inner">
+                    <div class="composer-leading" style="position:relative">
+                        <button class="composer-btn" id="chatUploadBtn" title="Add files">
+                            <i class="fas fa-paperclip"></i>
+                        </button>
+                        <div class="clip-dropdown" id="clipDropdown">
+                            <button class="clip-dropdown-item" data-action="upload">
+                                <i class="fas fa-upload"></i>
+                                Upload files
+                            </button>
+                            <button class="clip-dropdown-item" data-action="onedrive">
+                                <i class="fas fa-cloud"></i>
+                                Import from OneDrive
+                            </button>
+                        </div>
+                    </div>
+                    <div class="composer-primary">
+                        <textarea id="messageInput" placeholder="Ask a question about your selected files..." rows="1"></textarea>
+                    </div>
+                    <div class="composer-trailing">
+                        <button class="composer-send-btn" id="sendBtn" disabled>
+                            <i class="fas fa-arrow-up"></i>
+                        </button>
+                    </div>
                 </div>
-
-                <p class="composer-hint">Responses are grounded in indexed documents. Verify critical outputs.</p>
             </section>
         </main>
 
+        <input type="file" id="fileInput" multiple accept=".pdf,.docx,.doc,.pptx,.xlsx,.xls,.csv,.txt" hidden>
+
         <aside class="files-panel" id="filesPanel">
-            <div class="files-panel-header">
-                <h3>Files</h3>
-                <p class="files-panel-subtitle">Upload from chatbox. Select indexed files here.</p>
-                <div class="files-mode-switch">
-                    <button class="mode-btn active" id="filesModeDocsBtn" data-mode="docs">Documents</button>
-                    <button class="mode-btn" id="filesModeOneDriveBtn" data-mode="onedrive">OneDrive</button>
+            <div class="od-panel-header">
+                <h4>Import from OneDrive</h4>
+                <button class="icon-btn-sm" id="odPanelCloseBtn" title="Close">
+                    <i class="fas fa-xmark"></i>
+                </button>
+            </div>
+
+            <div class="od-connection-card">
+                <div>
+                    <strong id="odStatusText">Checking OneDrive status...</strong>
+                    <small id="odUserText">Connect your OneDrive to import files.</small>
+                </div>
+                <div class="od-connection-actions">
+                    <a href="/onedrive/connect" class="primary-btn small" id="odConnectBtn">Connect</a>
+                    <button class="ghost-btn small" id="odDisconnectBtn">Disconnect</button>
                 </div>
             </div>
 
-            <div class="tab-pane active" id="localPane">
-                <div class="pane-toolbar split">
-                    <h4 class="pane-title">Indexed Documents</h4>
-                    <button class="ghost-btn small" id="refreshFilesBtn">
-                        <i class="fas fa-rotate"></i>
-                        Refresh
-                    </button>
-                </div>
-
-                <input type="file" id="fileInput" multiple accept=".pdf,.docx,.doc,.xlsx,.xls,.csv,.txt" hidden>
-
-                <div class="pane-stats">
-                    <span id="filesCount">0 documents</span>
-                    <span id="filesChunks">0 chunks</span>
-                </div>
-
-                <div class="file-list" id="filesList"></div>
+            <div class="od-nav">
+                <button class="ghost-btn small" id="odBackBtn">
+                    <i class="fas fa-arrow-left"></i>
+                    Back
+                </button>
+                <span class="od-path" id="odPathLabel">/</span>
+                <button class="ghost-btn small icon-only" id="odRefreshBtn" title="Refresh folder">
+                    <i class="fas fa-rotate"></i>
+                </button>
             </div>
 
-            <div class="tab-pane" id="oneDrivePane">
-                <div class="pane-toolbar split">
-                    <h4 class="pane-title">OneDrive Import</h4>
-                    <button class="ghost-btn small icon-only" id="odRefreshBtn" title="Refresh folder">
-                        <i class="fas fa-rotate"></i>
-                    </button>
-                </div>
-                <div class="od-connection-card">
-                    <div>
-                        <strong id="odStatusText">Checking OneDrive status...</strong>
-                        <small id="odUserText">Connect your OneDrive to import files.</small>
-                    </div>
-                    <div class="od-connection-actions">
-                        <a href="/onedrive/connect" class="primary-btn small" id="odConnectBtn">Connect</a>
-                        <button class="ghost-btn small" id="odDisconnectBtn">Disconnect</button>
-                    </div>
-                </div>
-
-                <div class="pane-toolbar">
-                    <button class="ghost-btn small" id="odBackBtn">
-                        <i class="fas fa-arrow-left"></i>
-                        Back
-                    </button>
-                    <span class="od-path" id="odPathLabel">/</span>
-                </div>
-
-                <div class="pane-toolbar compact">
-                    <button class="primary-btn small" id="odImportBtn">
-                        <i class="fas fa-cloud-arrow-down"></i>
-                        Import Selected
-                    </button>
-                    <span id="odSelectionCount">0 selected</span>
-                </div>
-
-                <div class="od-file-list" id="odFilesList"></div>
+            <div class="od-import-bar">
+                <button class="primary-btn small" id="odImportBtn">
+                    <i class="fas fa-cloud-arrow-down"></i>
+                    Import Selected
+                </button>
+                <span id="odSelectionCount">0 selected</span>
             </div>
 
-            <div class="files-selected-bar" id="filesSelectedBar">
-                <span id="filesSelectedBarText">0 selected</span>
-                <button class="ghost-btn small" id="filesSelectedClearBtn">Clear</button>
-            </div>
+            <div class="od-file-list" id="odFilesList"></div>
         </aside>
+
+        <aside class="files-manage-panel" id="filesManagePanel">
+            <div class="fm-panel-header">
+                <h4>Uploaded Files</h4>
+                <button class="icon-btn-sm" id="fmPanelCloseBtn" title="Close">
+                    <i class="fas fa-xmark"></i>
+                </button>
+            </div>
+            <div class="fm-file-list" id="fmFileList"></div>
+        </aside>
+
     </div>
 
     <div class="upload-progress-card" id="uploadProgressCard">
@@ -250,21 +279,6 @@
     </div>
 
     <div id="toastContainer" class="toast-container"></div>
-
-    <div class="citation-overlay" id="citationOverlay">
-        <div class="citation-modal">
-            <div class="citation-modal-header">
-                <div>
-                    <h4 id="citationTitle">Source</h4>
-                    <p id="citationMeta"></p>
-                </div>
-                <button class="icon-btn" id="citationCloseBtn" title="Close">
-                    <i class="fas fa-xmark"></i>
-                </button>
-            </div>
-            <div class="citation-body" id="citationBody"></div>
-        </div>
-    </div>
 
     <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/9.1.6/marked.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.2.6/purify.min.js"></script>

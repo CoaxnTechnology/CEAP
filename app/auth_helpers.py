@@ -15,3 +15,15 @@ def login_required(view):
         return redirect(url_for("auth.index"))
 
     return wrapped
+
+
+def role_required(*roles):
+    def decorator(view):
+        @wraps(view)
+        def wrapped(*args, **kwargs):
+            user_role = session.get("role", "user")
+            if user_role not in roles and "admin" not in roles:
+                return jsonify({"error": "Insufficient permissions"}), 403
+            return view(*args, **kwargs)
+        return wrapped
+    return decorator

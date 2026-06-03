@@ -17,6 +17,7 @@ from collections import Counter
 
 import chromadb
 from chromadb.config import Settings
+from flask import g
 from sentence_transformers import SentenceTransformer
 
 from app.config import RAGConfig
@@ -135,12 +136,29 @@ class ChromaStore:
         return self._col.count()
 
     def indexed_file_ids(self) -> set[str]:
-        cached = list_file_chunks(self.user_key)
-        if cached:
-            return cached
+        try:
+            key = f"idx_ids_{self.user_key}"
+            cached = getattr(g, key, None)
+            if cached is not None:
+                return cached
+        except Exception:
+            pass
+
+        result = list_file_chunks(self.user_key)
+        if result:
+            try:
+                setattr(g, key, result)
+            except Exception:
+                pass
+            return result
 
         if self._col.count() == 0:
-            return set()
+            result = set()
+            try:
+                setattr(g, key, result)
+            except Exception:
+                pass
+            return result
 
         results = self._col.get()
         metadatas = results.get("metadatas") or []
@@ -158,6 +176,11 @@ class ChromaStore:
             if file_id:
                 file_ids.add(file_id)
                 add_file_chunks(self.user_key, file_id, 0)
+
+        try:
+            setattr(g, key, file_ids)
+        except Exception:
+            pass
 
         return file_ids
 

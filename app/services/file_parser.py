@@ -2,9 +2,10 @@ import os
 import tempfile
 import PyPDF2
 from docx import Document as DocxDocument
+from pptx import Presentation
 import pandas as pd
 
-SUPPORTED_EXTS = {".pdf", ".docx", ".xlsx", ".xls", ".csv", ".txt"}
+SUPPORTED_EXTS = {".pdf", ".docx", ".pptx", ".xlsx", ".xls", ".csv", ".txt"}
 
 
 class TextExtractionError(Exception):
@@ -26,6 +27,17 @@ def extract_text(filepath: str, original_name: str) -> str:
         elif ext == ".docx":
             doc = DocxDocument(filepath)
             text = "\n\n".join(p.text for p in doc.paragraphs if p.text.strip())
+        elif ext == ".pptx":
+            prs = Presentation(filepath)
+            slides = []
+            for i, slide in enumerate(prs.slides, 1):
+                lines = []
+                for shape in slide.shapes:
+                    if shape.has_text_frame:
+                        lines.append(shape.text_frame.text)
+                if lines:
+                    slides.append(f"[Slide {i}]\n" + "\n".join(lines))
+            text = "\n\n".join(slides)
         elif ext in (".xlsx", ".xls"):
             xf = pd.ExcelFile(filepath)
             parts = [

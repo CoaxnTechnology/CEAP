@@ -11,7 +11,7 @@ from werkzeug.security import check_password_hash
 from flask_wtf.csrf import generate_csrf
 from app.auth_helpers import login_required
 from app.config import AuthConfig
-from app.services.persistence import create_user, get_user_by_email
+from app.services.persistence import create_user, get_user_by_email, update_user_role
 from app.services.rag import cleanup_user_store
 
 auth_bp = Blueprint("auth", __name__)
@@ -32,21 +32,27 @@ def api_login():
 
     user = get_user_by_email(email)
     if user and check_password_hash(user["password_hash"], password):
+        update_user_role(email)
+        user = get_user_by_email(email) or user
         generate_csrf()
         session.permanent = True
         session["user"] = email
         session["username"] = email.split("@")[0]
+        session["role"] = user.get("role", "user")
         session.pop("user_key", None)
-        return jsonify({"success": True, "username": session["username"]})
+        return jsonify({"success": True, "username": session["username"], "role": session["role"]})
 
     if email in AuthConfig.USERS and AuthConfig.USERS[email] == password:
         create_user(email, password)
+        update_user_role(email)
+        user = get_user_by_email(email) or {"email": email, "role": "user", "password_hash": ""}
         generate_csrf()
         session.permanent = True
         session["user"] = email
         session["username"] = email.split("@")[0]
+        session["role"] = user.get("role", "user")
         session.pop("user_key", None)
-        return jsonify({"success": True, "username": session["username"]})
+        return jsonify({"success": True, "username": session["username"], "role": session["role"]})
 
     return jsonify({"success": False, "error": "Invalid credentials"}), 401
 
@@ -62,3 +68,13 @@ def logout():
     cleanup_user_store()
     session.clear()
     return redirect(url_for("auth.index"))
+
+
+@auth_bp.route("/api/me", methods=["GET"])
+@login_required
+def api_me():
+    return jsonify({
+        "email": session.get("user", ""),
+        "username": session.get("username", ""),
+        "role": session.get("role", "user"),
+    })
