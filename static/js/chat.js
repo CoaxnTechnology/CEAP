@@ -116,7 +116,6 @@ async function init() {
 function cacheDom() {
     dom.appShell = document.querySelector(".app-shell");
     dom.sessionsPanel = document.getElementById("sessionsPanel");
-    dom.filesPanel = document.getElementById("filesPanel");
     dom.mobileBackdrop = document.getElementById("mobileBackdrop");
 
     dom.sessionsPanelToggleBtn = document.getElementById("sessionsPanelToggleBtn");
@@ -143,8 +142,8 @@ function cacheDom() {
     dom.clearFilesSelectionBtn = document.getElementById("clearFilesSelectionBtn");
 
     dom.fileInput = document.getElementById("fileInput");
+    dom.folderInput = document.getElementById("folderInput");
     dom.clipDropdown = document.getElementById("clipDropdown");
-    dom.odPanelCloseBtn = document.getElementById("odPanelCloseBtn");
 
     dom.odStatusText = document.getElementById("odStatusText");
     dom.odUserText = document.getElementById("odUserText");
@@ -163,10 +162,17 @@ function cacheDom() {
     dom.uploadProgressText = document.getElementById("uploadProgressText");
 
     dom.filesManageBtn = document.getElementById("filesManageBtn");
+    dom.rightPanel = document.getElementById("rightPanel");
+    dom.rpCollapseBtn = document.getElementById("rpCollapseBtn");
+    dom.sidebarUploadBtn = document.getElementById("sidebarUploadBtn");
+    dom.sidebarFolderUploadBtn = document.getElementById("sidebarFolderUploadBtn");
+    dom.sidebarFileList = document.getElementById("sidebarFileList");
+    dom.sidebarFileCount = document.getElementById("sidebarFileCount");
+    dom.sidebarSection = document.querySelector(".sidebar-section");
+    dom.sidebarSectionBody = document.getElementById("sidebarSectionBody");
+
     dom.exportChatBtn = document.getElementById("exportChatBtn");
     dom.sessionsSearchInput = document.getElementById("sessionsSearchInput");
-    dom.fmPanelCloseBtn = document.getElementById("fmPanelCloseBtn");
-    dom.fmFileList = document.getElementById("fmFileList");
 
     dom.composerPanel = document.getElementById("composerPanel");
     dom.dropOverlay = document.getElementById("dropOverlay");
@@ -220,8 +226,16 @@ function bindEvents() {
         dom.fileInput.value = "";
     });
 
+    dom.folderInput?.addEventListener("change", async () => {
+        const files = Array.from(dom.folderInput.files || []);
+        if (!files.length) {
+            return;
+        }
+        await handleFileUpload(files);
+        dom.folderInput.value = "";
+    });
+
     dom.clipDropdown?.addEventListener("click", handleClipDropdownClick);
-    dom.odPanelCloseBtn?.addEventListener("click", closeOneDrivePanel);
     document.addEventListener("click", handleOutsideClick);
 
     dom.odDisconnectBtn?.addEventListener("click", disconnectOneDrive);
@@ -233,9 +247,12 @@ function bindEvents() {
     dom.odFilesList?.addEventListener("click", handleOneDriveListClick);
     dom.messages?.addEventListener("click", handleMessageActions);
     dom.exportChatBtn?.addEventListener("click", exportConversation);
-    dom.filesManageBtn?.addEventListener("click", toggleFilesManagePanel);
-    dom.fmPanelCloseBtn?.addEventListener("click", closeFilesManagePanel);
-    dom.fmFileList?.addEventListener("click", handleFileManageActions);
+    dom.filesManageBtn?.addEventListener("click", toggleOneDrivePanel);
+    dom.rpCollapseBtn?.addEventListener("click", toggleOneDrivePanel);
+    dom.sidebarUploadBtn?.addEventListener("click", () => dom.fileInput?.click());
+    dom.sidebarFolderUploadBtn?.addEventListener("click", () => dom.folderInput?.click());
+    dom.sidebarSection?.addEventListener("click", handleSidebarSectionClick);
+    dom.sidebarFileList?.addEventListener("click", handleFileManageActions);
 
     dom.fsContent?.addEventListener("click", handleFeaturesPanelClick);
 
@@ -303,19 +320,22 @@ function updateCollapseBtnIcon() {
 }
 
 function toggleOneDrivePane() {
-    const panel = document.getElementById("filesPanel");
-    const isOpen = panel?.classList.contains("show");
-    if (isOpen) {
-        panel?.classList.remove("show");
-    } else {
-        panel?.classList.add("show");
+    const section = document.querySelector(".sidebar-section");
+    if (section) {
+        section.classList.add("open");
+    }
+    const od = document.querySelector(".sf-od-section");
+    if (od) {
+        od.classList.add("open");
         loadOneDriveStatus();
     }
 }
 
 function closeOneDrivePanel() {
-    const panel = document.getElementById("filesPanel");
-    panel?.classList.remove("show");
+    const od = document.querySelector(".sf-od-section");
+    if (od) {
+        od.classList.remove("open");
+    }
 }
 
 function toggleClipDropdown(event) {
@@ -342,29 +362,35 @@ function handleOutsideClick(event) {
     if (btn && dd && !btn.contains(event.target) && !dd.contains(event.target)) {
         dd.classList.remove("show");
     }
-    const fmPanel = document.getElementById("filesManagePanel");
-    const fmBtn = document.getElementById("filesManageBtn");
-    if (fmPanel && fmBtn && fmPanel.classList.contains("show") && !fmPanel.contains(event.target) && !fmBtn.contains(event.target)) {
-        fmPanel.classList.remove("show");
-    }
-
-
 }
 
-function toggleFilesManagePanel() {
-    const panel = document.getElementById("filesManagePanel");
-    if (!panel) return;
-    const open = panel.classList.contains("show");
-    if (open) {
-        panel.classList.remove("show");
-    } else {
-        renderFilesManageList();
-        panel.classList.add("show");
+function toggleSidebarFiles() {
+    const section = document.querySelector(".sidebar-section");
+    if (section) {
+        section.classList.toggle("open");
     }
 }
 
-function closeFilesManagePanel() {
-    document.getElementById("filesManagePanel")?.classList.remove("show");
+function handleSidebarSectionClick(event) {
+    const header = event.target.closest(".sidebar-section-header");
+    if (!header) return;
+    const section = header.closest(".sidebar-section");
+    if (section) {
+        section.classList.toggle("open");
+    }
+}
+
+function toggleOneDrivePanel() {
+    dom.rightPanel?.classList.toggle("show");
+}
+
+function toggleOneDrivePane() {
+    dom.rightPanel?.classList.add("show");
+    loadOneDriveStatus();
+}
+
+function closeOneDrivePanel() {
+    dom.rightPanel?.classList.remove("show");
 }
 
 function renderAllFeatures() {
@@ -434,28 +460,29 @@ function handleFeaturesPanelClick(event) {
     }
 }
 
-function renderFilesManageList() {
-    if (!dom.fmFileList) return;
+function renderSidebarFiles() {
+    if (!dom.sidebarFileList) return;
     if (!state.files.length) {
-        dom.fmFileList.innerHTML = `<div class="empty-state">No uploaded files yet.</div>`;
+        dom.sidebarFileList.innerHTML = `<div class="sf-empty">No uploaded files yet.</div>`;
+        dom.sidebarFileCount.textContent = "0";
         return;
     }
-    dom.fmFileList.innerHTML = state.files
+    dom.sidebarFileCount.textContent = String(state.files.length);
+    dom.sidebarFileList.innerHTML = state.files
         .map(
             (file) => `
-                <div class="fm-file-item${state.selectedFileIds.has(file.id) ? " selected" : ""}" data-file-id="${file.id}">
-                    <div class="fm-file-check">
+                <div class="sf-file-item${state.selectedFileIds.has(file.id) ? " selected" : ""}" data-file-id="${file.id}">
+                    <div class="sf-file-check">
                         <i class="fas fa-${state.selectedFileIds.has(file.id) ? "check-circle" : "circle"}"></i>
                     </div>
-                    <div class="fm-file-icon"><i class="fas fa-file"></i></div>
-                    <div class="fm-file-info">
-                        <div class="fm-file-name" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</div>
-                        <div class="fm-file-meta">${file.status === "ready" ? "Indexed" : "Error"} · ${formatFileSize(file.size)}</div>
+                    <div class="sf-file-icon ${getExtension(file.name) || "file"}">
+                        <i class="fas ${file.status === "ready" ? "fa-file-lines" : "fa-file-excel"}"></i>
                     </div>
-                    <button class="fm-file-summarize" data-file-id="${file.id}" title="Summarize this file">
-                        <i class="fas fa-file-lines"></i>
-                    </button>
-                    <button class="fm-file-delete" data-file-id="${file.id}" title="Delete file">
+                    <div class="sf-file-info">
+                        <div class="sf-file-name" title="${escapeHtml(file.name)}">${escapeHtml(file.name)}</div>
+                        <div class="sf-file-meta">${file.status === "ready" ? "Indexed" : "Error"} · ${formatFileSize(file.size)}</div>
+                    </div>
+                    <button class="sf-file-delete" data-file-id="${file.id}" title="Delete file">
                         <i class="fas fa-trash"></i>
                     </button>
                 </div>
@@ -464,21 +491,19 @@ function renderFilesManageList() {
         .join("");
 }
 
+function renderFilesManageList() {
+    renderSidebarFiles();
+}
+
 function handleFileManageActions(event) {
     event.stopPropagation();
-    const deleteBtn = event.target.closest(".fm-file-delete");
+    const deleteBtn = event.target.closest(".sf-file-delete");
     if (deleteBtn) {
         const fileId = deleteBtn.dataset.fileId;
         if (fileId) deleteUploadedFile(fileId);
         return;
     }
-    const summarizeBtn = event.target.closest(".fm-file-summarize");
-    if (summarizeBtn) {
-        const fileId = summarizeBtn.dataset.fileId;
-        if (fileId) summarizeFile(fileId);
-        return;
-    }
-    const row = event.target.closest(".fm-file-item");
+    const row = event.target.closest(".sf-file-item");
     if (!row) return;
     const fileId = row.dataset.fileId;
     if (!fileId) return;
@@ -489,7 +514,7 @@ function handleFileManageActions(event) {
     }
     persistSelectedFiles();
     updateSelectedFilesBar();
-    renderFilesManageList();
+    renderSidebarFiles();
 }
 
 function formatFileSize(bytes) {
@@ -519,7 +544,7 @@ async function deleteUploadedFile(fileId) {
         state.selectedFileIds.delete(fileId);
         persistSelectedFiles();
         updateSelectedFilesBar();
-        renderFilesManageList();
+        renderSidebarFiles();
         showToast("File deleted", "success");
     } catch (error) {
         showToast(error.message || "Failed to delete file", "error");
@@ -531,7 +556,6 @@ function summarizeFile(fileId) {
     state.selectedFileIds.add(fileId);
     persistSelectedFiles();
     updateSelectedFilesBar();
-    closeFilesManagePanel();
     if (dom.messageInput) {
         dom.messageInput.value = "Summarize this document in detail with key bullet points.";
         autoResizeInput();
@@ -1227,7 +1251,7 @@ async function loadFiles() {
         persistSelectedFiles();
 
         updateSelectedFilesBar();
-        renderFilesManageList();
+        renderSidebarFiles();
     } catch (error) {
         console.error("Failed to load files:", error);
     }

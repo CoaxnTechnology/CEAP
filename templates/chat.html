@@ -52,6 +52,28 @@
                     <div class="features-list" id="fsContent"></div>
                 </div>
 
+                <div class="sidebar-section open" data-sidebar-section="files">
+                    <div class="sidebar-section-header" data-sidebar-section="files">
+                        <i class="fas fa-chevron-right sidebar-section-arrow"></i>
+                        <span>Files</span>
+                        <span class="sidebar-section-count" id="sidebarFileCount">0</span>
+                    </div>
+                    <div class="sidebar-section-body" id="sidebarSectionBody">
+                        <div class="sf-upload-bar">
+                            <button class="sf-upload-btn" id="sidebarUploadBtn">
+                                <i class="fas fa-upload"></i>
+                                Upload
+                            </button>
+                            <button class="sf-upload-btn" id="sidebarFolderUploadBtn">
+                                <i class="fas fa-folder-plus"></i>
+                                Folder
+                            </button>
+                        </div>
+                        <input type="file" id="folderInput" webkitdirectory multiple hidden>
+                        <div id="sidebarFileList"></div>
+                    </div>
+                </div>
+
                 <div class="sessions-search">
                     <i class="fas fa-search sessions-search-icon"></i>
                     <input type="text" id="sessionsSearchInput" placeholder="Search chats..." autocomplete="off">
@@ -124,9 +146,6 @@
                     <button class="icon-btn" id="exportChatBtn" title="Export conversation">
                         <i class="fas fa-download"></i>
                     </button>
-                    <button class="icon-btn" id="filesManageBtn" title="Manage files">
-                        <i class="fas fa-folder-open"></i>
-                    </button>
                     <button class="ghost-btn danger" id="clearChatBtn">
                         <i class="fas fa-trash"></i>
                         Clear Chat
@@ -140,7 +159,7 @@
                         <i class="fas fa-building"></i>
                     </div>
                     <h2>How can I help your business today?</h2>
-                    <p>I can handle HR, Accounting, and Admin tasks — or answer questions from your uploaded documents. Browse features in the right panel.</p>
+                    <p>I can handle HR, Accounting, and Admin tasks — or answer questions from your uploaded documents.</p>
                     <div class="quick-prompts">
                         <button class="prompt-chip" data-prompt="Apply for annual leave from tomorrow for 3 days">
                             <i class="fas fa-calendar-days"></i>
@@ -172,16 +191,16 @@
                 <div class="messages-list" id="messages" role="log" aria-live="polite"></div>
             </section>
 
+            <div class="selected-files-bar" id="selectedFilesBar">
+                <div class="selected-files-chips" id="selectedFilesChips"></div>
+                <button class="ghost-btn small" id="clearFilesSelectionBtn">Clear</button>
+            </div>
+
             <section class="composer-panel" id="composerPanel">
                 <div class="drop-overlay" id="dropOverlay">
                     <i class="fas fa-cloud-upload-alt"></i>
                     <p>Drop files to upload &amp; index</p>
                     <small>PDF, DOCX, PPTX, XLSX, CSV, TXT supported</small>
-                </div>
-
-                <div class="selected-files-bar" id="selectedFilesBar">
-                    <div class="selected-files-chips" id="selectedFilesChips"></div>
-                    <button class="ghost-btn small" id="clearFilesSelectionBtn">Clear</button>
                 </div>
 
                 <div class="composer-inner">
@@ -214,55 +233,46 @@
 
         <input type="file" id="fileInput" multiple accept=".pdf,.docx,.doc,.pptx,.xlsx,.xls,.csv,.txt" hidden>
 
-        <aside class="files-panel" id="filesPanel">
-            <div class="od-panel-header">
-                <h4>Import from OneDrive</h4>
-                <button class="icon-btn-sm" id="odPanelCloseBtn" title="Close">
-                    <i class="fas fa-xmark"></i>
+        <aside id="rightPanel">
+            <div class="rp-header">
+                <span class="rp-title">OneDrive</span>
+                <button class="rp-collapse-btn" id="rpCollapseBtn" title="Close panel">
+                    <i class="fas fa-chevron-right"></i>
                 </button>
             </div>
-
-            <div class="od-connection-card">
-                <div>
-                    <strong id="odStatusText">Checking OneDrive status...</strong>
-                    <small id="odUserText">Connect your OneDrive to import files.</small>
+            <div class="rp-body">
+                <div class="od-connection-card">
+                    <div>
+                        <strong id="odStatusText">Checking OneDrive status...</strong>
+                        <small id="odUserText">Connect your OneDrive to import files.</small>
+                    </div>
+                    <div class="od-connection-actions">
+                        <a href="/onedrive/connect" class="primary-btn small" id="odConnectBtn">Connect</a>
+                        <button class="ghost-btn small" id="odDisconnectBtn">Disconnect</button>
+                    </div>
                 </div>
-                <div class="od-connection-actions">
-                    <a href="/onedrive/connect" class="primary-btn small" id="odConnectBtn">Connect</a>
-                    <button class="ghost-btn small" id="odDisconnectBtn">Disconnect</button>
+
+                <div class="od-nav">
+                    <button class="ghost-btn small" id="odBackBtn">
+                        <i class="fas fa-arrow-left"></i>
+                        Back
+                    </button>
+                    <span class="od-path" id="odPathLabel">/</span>
+                    <button class="ghost-btn small icon-only" id="odRefreshBtn" title="Refresh folder">
+                        <i class="fas fa-rotate"></i>
+                    </button>
                 </div>
-            </div>
 
-            <div class="od-nav">
-                <button class="ghost-btn small" id="odBackBtn">
-                    <i class="fas fa-arrow-left"></i>
-                    Back
-                </button>
-                <span class="od-path" id="odPathLabel">/</span>
-                <button class="ghost-btn small icon-only" id="odRefreshBtn" title="Refresh folder">
-                    <i class="fas fa-rotate"></i>
-                </button>
-            </div>
+                <div class="od-import-bar">
+                    <button class="primary-btn small" id="odImportBtn">
+                        <i class="fas fa-cloud-arrow-down"></i>
+                        Import Selected
+                    </button>
+                    <span id="odSelectionCount">0 selected</span>
+                </div>
 
-            <div class="od-import-bar">
-                <button class="primary-btn small" id="odImportBtn">
-                    <i class="fas fa-cloud-arrow-down"></i>
-                    Import Selected
-                </button>
-                <span id="odSelectionCount">0 selected</span>
+                <div class="od-file-list" id="odFilesList"></div>
             </div>
-
-            <div class="od-file-list" id="odFilesList"></div>
-        </aside>
-
-        <aside class="files-manage-panel" id="filesManagePanel">
-            <div class="fm-panel-header">
-                <h4>Uploaded Files</h4>
-                <button class="icon-btn-sm" id="fmPanelCloseBtn" title="Close">
-                    <i class="fas fa-xmark"></i>
-                </button>
-            </div>
-            <div class="fm-file-list" id="fmFileList"></div>
         </aside>
 
     </div>
