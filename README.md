@@ -1,6 +1,6 @@
-# DocuMind — AI Document Assistant
+# CEAP for Schools — Enterprise AI Platform
 
-A clean, modern RAG-powered chat interface for querying your documents with Google Gemini AI. Upload local files or import from OneDrive, then ask questions and get grounded, sourced answers.
+A centralized AI-powered knowledge platform for schools. Upload circulars, policies, student records, and fee documents — then ask questions in natural language and get grounded answers with document references.
 
 ![Python](https://img.shields.io/badge/Python-3.10%2B-blue)
 ![Flask](https://img.shields.io/badge/Flask-3.0-lightgrey)
@@ -15,14 +15,14 @@ A clean, modern RAG-powered chat interface for querying your documents with Goog
 - **Multi-session chat** — Create, switch, and delete conversations; history persists across reloads
 - **Source citations** — Every answer shows clickable source chips with the exact passage used
 - **Automatic retry** — Gemini 503 "high demand" errors are retried with exponential backoff
-- **Multi-user scoped** — Each user gets isolated ChromaDB collections and SQLite records
+- **Multi-user scoped** — Each user gets isolated ChromaDB collections and PostgreSQL records
 
 ## Architecture
 
 ```
 ┌─────────────────────────────────────────────┐
 │                  Browser                     │
-│  chat.html + chat.js + chat.css (dark UI)   │
+│  ai_chat.html + chat.js + chat.css (dark UI) │
 └──────────────┬──────────────────────────────┘
                │  HTTP / JSON
 ┌──────────────▼──────────────────────────────┐
@@ -42,12 +42,12 @@ A clean, modern RAG-powered chat interface for querying your documents with Goog
                       │
         ┌─────────────┼─────────────┐
         ▼             ▼             ▼
-   ┌──────────┐  ┌──────────┐  ┌───────────┐
-   │ SQLite   │  │ ChromaDB │  │ MS Graph  │
-   │ (users,  │  │ (vectors │  │ (OneDrive │
-   │ sessions,│  │  + BM25) │  │  files)   │
-   │ messages)│  │          │  │           │
-   └──────────┘  └──────────┘  └───────────┘
+   ┌────────────┐  ┌──────────┐  ┌───────────┐
+   │ PostgreSQL │  │ ChromaDB │  │ MS Graph  │
+   │ (users,    │  │ (vectors │  │ (OneDrive │
+   │ sessions,  │  │  + BM25) │  │  files)   │
+   │ messages)  │  │          │  │           │
+   └────────────┘  └──────────┘  └───────────┘
 ```
 
 ## Quick Start
@@ -101,7 +101,7 @@ Open **http://localhost:5000** and log in with one of the demo accounts:
 
 | Email | Password |
 |---|---|
-| `admin@documind.ai` | `demo1234` |
+| `admin@ceap.school` | `demo1234` |
 | `user@example.com` | `password123` |
 
 Add more users in `app/config.py` under `AuthConfig.USERS`.
@@ -185,16 +185,16 @@ OneDrive_Chatbot/
 │       ├── file_parser.py     # PDF, DOCX, XLSX, CSV, TXT extraction
 │       ├── gemini.py          # Gemini API client with retry
 │       ├── onedrive.py        # MS Graph API helpers
-│       ├── persistence.py     # SQLite schema and queries
+│       ├── persistence.py     # PostgreSQL schema and queries
 │       ├── rag.py             # Chunking, indexing, prompt building
 │       └── vector_store.py    # ChromaDB wrapper (hybrid search)
 ├── static/
 │   ├── css/chat.css           # Dark ChatGPT-style theme
 │   └── js/chat.js             # Frontend state and DOM logic
 ├── templates/
-│   └── chat.html              # Single-page UI
+│   ├── ai_chat.html            # AI Chat UI (both /chat and /ai-chat)
 ├── chroma_db/                 # Persistent vector store (auto-created)
-├── documind.sqlite3           # SQLite database (auto-created)
+├── ceap.sqlite3               # (removed — PostgreSQL only)
 ├── flask_session/             # Server-side session store
 ├── requirements.txt
 ├── run.py
@@ -222,7 +222,7 @@ OneDrive_Chatbot/
 
 ## Tech Stack
 
-- **Backend**: Flask, SQLite, ChromaDB
+- **Backend**: Flask, PostgreSQL, ChromaDB
 - **AI**: Google Gemini (via `google-genai`)
 - **Vector Search**: ChromaDB hybrid (HNSW dense + BM25 sparse + RRF)
 - **Embeddings**: `sentence-transformers` (local, no external API)

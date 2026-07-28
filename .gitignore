@@ -9,10 +9,14 @@ __pycache__/
 .env
 
 # Runtime data (auto-created)
-documind.sqlite3*
+# ceap.sqlite3* (if ever used for local dev)
 chroma_db/
 logs/
 flask_session/
 
 # Lint / tooling cache
 .ruff_cache/
+
+# Node
+node_modules/
+frontend/dist/

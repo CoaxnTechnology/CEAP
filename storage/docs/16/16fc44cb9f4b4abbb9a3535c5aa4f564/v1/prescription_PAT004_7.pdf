@@ -1,0 +1,56 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> >> >> >>
+endobj
+4 0 obj
+<< /Length 1422 >>
+stream
+BT /F1 11 Tf 50 750 Td (PRESCRIPTION) Tj ET
+BT /F1 11 Tf 50 736 Td (Date: 2026-02-09 06:19) Tj ET
+BT /F1 11 Tf 50 722 Td () Tj ET
+BT /F1 11 Tf 50 708 Td (Patient Information:) Tj ET
+BT /F1 11 Tf 50 694 Td (  ID: PAT004) Tj ET
+BT /F1 11 Tf 50 680 Td (  Name: joseph tie) Tj ET
+BT /F1 11 Tf 50 666 Td (  DOB: 2000-12-02) Tj ET
+BT /F1 11 Tf 50 652 Td (  Gender: male) Tj ET
+BT /F1 11 Tf 50 638 Td () Tj ET
+BT /F1 11 Tf 50 624 Td (Prescription Details:) Tj ET
+BT /F1 11 Tf 50 610 Td (  Item 1:) Tj ET
+BT /F1 11 Tf 50 596 Td (    Medicine: Paracetamol 500mg) Tj ET
+BT /F1 11 Tf 50 582 Td (    Dosage: 1-0-1) Tj ET
+BT /F1 11 Tf 50 568 Td (    Duration: 5 days) Tj ET
+BT /F1 11 Tf 50 554 Td (    Notes: After food) Tj ET
+BT /F1 11 Tf 50 540 Td () Tj ET
+BT /F1 11 Tf 50 526 Td (  Item 2:) Tj ET
+BT /F1 11 Tf 50 512 Td (    Medicine: Amoxicillin 500mg) Tj ET
+BT /F1 11 Tf 50 498 Td (    Dosage: 1-1-1) Tj ET
+BT /F1 11 Tf 50 484 Td (    Duration: 7 days) Tj ET
+BT /F1 11 Tf 50 470 Td (    Notes: Before food) Tj ET
+BT /F1 11 Tf 50 456 Td () Tj ET
+BT /F1 11 Tf 50 442 Td (  Item 3:) Tj ET
+BT /F1 11 Tf 50 428 Td (    Medicine: Vitamin D3) Tj ET
+BT /F1 11 Tf 50 414 Td (    Dosage: 0-0-1) Tj ET
+BT /F1 11 Tf 50 400 Td (    Duration: 30 days) Tj ET
+BT /F1 11 Tf 50 386 Td () Tj ET
+BT /F1 11 Tf 50 372 Td (Prescribed by: Dr. Super Admin) Tj ET
+BT /F1 11 Tf 50 358 Td (\(Generated without WeasyPrint - install for formatted PDFs\)) Tj ET
+endstream
+endobj
+xref
+0 5
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000290 00000 n 
+trailer
+<< /Size 5 /Root 1 0 R >>
+startxref
+1764
+%%EOF
