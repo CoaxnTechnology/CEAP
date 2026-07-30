@@ -108,6 +108,7 @@ class Document(Base):
     source = Column(String(50), nullable=False)
     source_ref = Column(String(255), default="")
     category_id = Column(String(64), ForeignKey("document_categories.id"), nullable=True)
+    department = Column(String(50), nullable=True)
     tags = Column(JSON, default=list)
     version = Column(Integer, default=1)
     file_path = Column(String(500), default="")
@@ -383,6 +384,39 @@ class AuditDocument(Base):
     created_at = Column(Float, default=_ts)
 
 
+class KnowledgeCard(Base):
+    __tablename__ = "knowledge_cards"
+
+    id = Column(String(64), primary_key=True, default=_uuid)
+    user_key = Column(String(64), nullable=False)
+    title = Column(String(255), nullable=False)
+    card_type = Column(String(50), nullable=False)
+    dept = Column(String(100), default="")
+    status = Column(String(20), default="Current")
+    summary = Column(Text, default="")
+    relations = Column(Integer, default=0)
+    updated_at = Column(String(20), default="")
+    created_at = Column(Float, default=_ts)
+
+
+class ComplianceEvidence(Base):
+    __tablename__ = "compliance_evidence"
+
+    id = Column(String(64), primary_key=True, default=_uuid)
+    user_key = Column(String(64), nullable=False)
+    title = Column(String(255), nullable=False)
+    framework = Column(String(50), nullable=False)
+    status = Column(String(20), default="Missing")
+    category = Column(String(100), default="")
+    last_updated = Column(String(20), default="—")
+    notes = Column(Text, default="")
+    file_path = Column(String(500), default="")
+    source_name = Column(String(255), default="")
+    owner = Column(String(100), default="")
+    created_at = Column(Float, default=_ts)
+    updated_at = Column(Float, default=_ts, onupdate=_ts)
+
+
 # ─── Document Repository 2.0 ────────────────────────────────────────────
 
 class Folder(Base):
@@ -476,6 +510,35 @@ class DocumentComment(Base):
 
 
 # ─── End Document Repository 2.0 ────────────────────────────────────────
+
+
+class DocumentTemplate(Base):
+    __tablename__ = "document_templates"
+
+    id = Column(String(64), primary_key=True, default=_uuid)
+    doc_type = Column(String(100), nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    description = Column(Text, default="")
+    is_active = Column(Integer, default=1)
+    created_at = Column(Float, default=_ts)
+
+
+class AIDraft(Base):
+    __tablename__ = "ai_drafts"
+
+    id = Column(String(64), primary_key=True, default=_uuid)
+    user_key = Column(String(64), nullable=False, index=True)
+    doc_type = Column(String(100), nullable=False)
+    template_id = Column(String(64), default="")
+    template_name = Column(String(255), default="")
+    title = Column(String(255), nullable=False)
+    content = Column(Text, nullable=False)
+    department = Column(String(100), default="")
+    academic_year = Column(String(20), default="")
+    audience = Column(String(100), default="")
+    topic = Column(String(255), default="")
+    status = Column(String(20), default="draft")  # draft, published
+    created_at = Column(Float, default=_ts)
 
 
 class ActivityLog(Base):

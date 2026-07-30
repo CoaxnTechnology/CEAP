@@ -163,9 +163,11 @@ def register_and_index(
     source: str = "local",
     source_ref: str = "",
     category_id: str = None,
+    department: str = None,
+    file_path: str = "",
 ) -> dict:
     return register_and_index_for_user(
-        _user_key(), name, text, size, source=source, source_ref=source_ref, category_id=category_id
+        _user_key(), name, text, size, source=source, source_ref=source_ref, category_id=category_id, department=department, file_path=file_path
     )
 
 
@@ -177,6 +179,8 @@ def register_and_index_for_user(
     source: str = "local",
     source_ref: str = "",
     category_id: str = None,
+    department: str = None,
+    file_path: str = "",
 ) -> dict:
     """
     Chunk text → embed → upsert into Chroma → persist registry entry.
@@ -198,6 +202,8 @@ def register_and_index_for_user(
         "source": source,
         "source_ref": source_ref,
         "category_id": category_id,
+        "department": department,
+        "file_path": file_path,
     }
 
     save_document(user_key, file_id, entry)

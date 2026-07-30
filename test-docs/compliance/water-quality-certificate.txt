@@ -1,0 +1,29 @@
+WATER QUALITY CERTIFICATE
+Government Higher Secondary School, Chennai
+Certificate No: WQ/2025/07/0042
+Issue Date: 15-07-2025 | Valid Until: 15-01-2026
+Issued By: Chennai Metropolitan Water Supply & Sewage Board (CMWSSB)
+Testing Lab: Southern India Water Testing Lab (NABL Accred. No: NABL-1234)
+
+Tested Sample: School borewell water supply (Point of use: Administrative Block)
+Parameters Tested:
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Parameter             Result       Standard      Status
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ pH                    7.2          6.5 – 8.5     ✓ PASS
+ Total Dissolved Solids  180 mg/L   ≤ 500 mg/L    ✓ PASS
+ Bacteriological Coliform Absent in 100ml  Absent    ✓ PASS
+ Fluoride                0.8 mg/L   ≤ 1.5 mg/L    ✓ PASS
+ Iron                    0.2 mg/L   ≤ 0.3 mg/L    ✓ PASS
+ Chloride                45 mg/L    ≤ 250 mg/L    ✓ PASS
+ Total Hardness          120 mg/L   ≤ 300 mg/L    ✓ PASS
+ COD                     12 mg/L    ≤ 30 mg/L     ✓ PASS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+CONCLUSION: WATER FIT FOR DRINKING
+
+Remarks: Test results in compliance with IS 10500:2012 (Indian Standard for Drinking Water).
+Remedial action required to replace UV filter before next testing due Jan 2026.
+
+Authorized By: Dr. S. Murugan, Chief Chemist
+Laboratory License No: NABL-1234-TL-2024

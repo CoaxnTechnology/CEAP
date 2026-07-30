@@ -95,30 +95,84 @@ def _create_default_categories(db, school_id: str):
             db.add(child)
 
 
-@onboarding_bp.route("/status", methods=["GET"])
-def onboarding_status():
-    """Check if onboarding is needed - returns existing school if any."""
+@onboarding_bp.route("/signup", methods=["POST"])
+def signup():
+    """Create a pending user account. User logs in immediately after."""
+    data = request.json or {}
+    name = data.get("name", "").strip()
+    email = data.get("email", "").strip().lower()
+    password = data.get("password", "")
+
+    if not name or not email or not password:
+        return jsonify({"error": "Name, email, and password are required"}), 400
+    if len(password) < 4:
+        return jsonify({"error": "Password must be at least 4 characters"}), 400
+
     db = SessionLocal()
     try:
-        # Check if any school exists
-        school = db.query(School).first()
-        if school:
-            # Check if admin user exists
-            admin = db.query(User).filter(
-                User.school_id == school.id,
-                User.role.in_(["Principal", "admin"])
-            ).first()
+        existing = db.query(User).filter(User.email == email).first()
+        if existing:
+            return jsonify({"error": "Email already registered"}), 409
+
+        user = User(
+            email=email,
+            full_name=name,
+            password_hash=generate_password_hash(password),
+            role="Principal",
+            is_admin=1,
+            status="pending",
+            created_at=time.time(),
+        )
+        db.add(user)
+        db.commit()
+
+        session["user"] = email
+        session["username"] = name.split()[0] if name.split() else name
+        session["role"] = "Principal"
+
+        return jsonify({
+            "success": True,
+            "username": session["username"],
+            "role": "Principal",
+            "email": email,
+        }), 201
+    except Exception as e:
+        db.rollback()
+        return jsonify({"error": str(e)}), 500
+    finally:
+        db.close()
+
+
+@onboarding_bp.route("/status", methods=["GET"])
+def onboarding_status():
+    """Check if the current session user has completed onboarding."""
+    user_email = session.get("user")
+    if not user_email:
+        return jsonify({
+            "authenticated": False,
+            "onboarding_complete": False,
+            "school": None,
+        })
+
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.email == user_email).first()
+        if user and user.school_id:
+            school = db.query(School).filter(School.id == user.school_id).first()
             return jsonify({
+                "authenticated": True,
                 "onboarding_complete": True,
+                "user": {"full_name": user.full_name, "role": user.role},
                 "school": {
                     "id": school.id,
                     "name": school.name,
                     "code": school.code,
-                },
-                "has_admin": admin is not None,
+                } if school else None,
             })
         return jsonify({
+            "authenticated": True,
             "onboarding_complete": False,
+            "user": {"full_name": user.full_name, "role": user.role} if user else None,
             "school": None,
         })
     finally:
@@ -126,31 +180,35 @@ def onboarding_status():
 
 
 @onboarding_bp.route("/school", methods=["POST"])
+@login_required
 def create_school():
     """
-    Complete school onboarding:
+    Complete school onboarding for the logged-in user:
     - Create school
     - Create enabled departments
-    - Create admin user (Principal)
+    - Update user with school_id and role
     - Create default document categories
     - Create pending invitation records
     """
+    user_email = session.get("user")
     data = request.json or {}
     school_data = data.get("school", {})
     departments = data.get("departments", [])
     admin = data.get("admin", {})
     invitations = data.get("invitations", [])
-    connectors = data.get("connectors", [])  # OneDrive only
+    connectors = data.get("connectors", [])
 
-    # Validate required fields
     if not school_data.get("name") or not school_data.get("city") or not school_data.get("state"):
         return jsonify({"error": "School name, city, and state are required"}), 400
-    if not admin.get("name") or not admin.get("role"):
-        return jsonify({"error": "Admin name and role are required"}), 400
 
     db = SessionLocal()
     try:
-        # 1. Create School
+        user = db.query(User).filter(User.email == user_email).first()
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+        if user.school_id:
+            return jsonify({"error": "School already exists for this user"}), 400
+
         school = School(
             name=school_data.get("name", "").strip(),
             code=school_data.get("code", "").strip() or uuid.uuid4().hex[:8].upper(),
@@ -164,7 +222,6 @@ def create_school():
         db.add(school)
         db.flush()
 
-        # 2. Create Departments (only enabled ones)
         dept_map = {}
         for dept_key in departments:
             if dept_key in [d["id"] for d in DEFAULT_DEPARTMENTS]:
@@ -178,55 +235,39 @@ def create_school():
                 db.flush()
                 dept_map[dept_key] = dept.id
 
-        # 3. Create Admin User (Principal)
-        admin_email = (admin.get("email", "").strip().lower() or
-                       f"admin@{school.code.lower()}.local")
-        admin_password = secrets.token_urlsafe(12)  # Random secure password
-        
-        admin_user = User(
-            email=admin_email,
-            full_name=admin.get("name", "").strip(),
-            password_hash=generate_password_hash(admin_password),
-            role=admin.get("role", "Principal"),
-            school_id=school.id,
-            is_admin=1,
-            status="active",
-            created_at=time.time(),
-        )
-        db.add(admin_user)
+        user.school_id = school.id
+        user.status = "active"
+        if admin.get("role"):
+            user.role = admin.get("role")
+            session["role"] = admin.get("role")
+        if admin.get("name"):
+            user.full_name = admin.get("name")
 
-        # 4. Create default document categories
         _create_default_categories(db, school.id)
 
-        # 5. Create invitation records (pending users)
         for invite in invitations:
-            email = invite.get("email", "").strip().lower()
+            invite_email = invite.get("email", "").strip().lower()
             role = invite.get("role", "Teacher")
             dept = invite.get("department", "")
-            
-            if email and email != admin_email:
-                # Check if user already exists
-                existing = db.query(User).filter(User.email == email).first()
+            if invite_email and invite_email != user_email:
+                existing = db.query(User).filter(User.email == invite_email).first()
                 if not existing:
-                    # Generate temp password for invited user
                     temp_password = secrets.token_urlsafe(10)
                     invited_user = User(
-                        email=email,
-                        full_name=email.split("@")[0].replace(".", " ").replace("_", " ").title(),
+                        email=invite_email,
+                        full_name=invite_email.split("@")[0].replace(".", " ").replace("_", " ").title(),
                         password_hash=generate_password_hash(temp_password),
                         role=role,
                         department=dept,
                         school_id=school.id,
-                        invited_by=admin_email,
+                        invited_by=user_email,
                         invited_at=time.time(),
                         status="invited",
                         created_at=time.time(),
                     )
                     db.add(invited_user)
 
-        # 6. Handle OneDrive connector state (store in session for now)
-        # Real OAuth happens via /auth/onedrive/connect on frontend
-        od_connected = any(c.get("id") == "onedrive" and c.get("status") == "Connected" 
+        od_connected = any(c.get("id") == "onedrive" and c.get("status") == "Connected"
                           for c in connectors)
 
         db.commit()
@@ -237,10 +278,6 @@ def create_school():
                 "id": school.id,
                 "name": school.name,
                 "code": school.code,
-            },
-            "admin": {
-                "email": admin_email,
-                "temp_password": admin_password,  # Only returned once!
             },
             "departments_created": list(dept_map.keys()),
             "invitations_sent": len(invitations),
@@ -317,26 +354,26 @@ def list_role_templates():
 
 @onboarding_bp.route("/connectors/onedrive", methods=["GET"])
 def onedrive_status():
-    """Check OneDrive connection status."""
+    """Check OneDrive connection status from session."""
+    od_token = session.get("od_token")
+    connected = bool(od_token)
     return jsonify({
         "id": "onedrive",
         "name": "OneDrive",
         "description": "Microsoft 365 school tenant documents",
-        "status": "Not Connected",
-        "connected": False,
+        "status": "Connected" if connected else "Not Connected",
+        "connected": connected,
+        "lastSync": None,
     })
 
 
 @onboarding_bp.route("/connectors/onedrive/connect", methods=["POST"])
 @login_required
 def onedrive_connect():
-    """Initiate OneDrive OAuth connection."""
-    # In production, this would redirect to Microsoft OAuth
-    # For prototype, return success
+    """Redirect to real OneDrive OAuth flow."""
     return jsonify({
         "success": True,
-        "message": "OneDrive connection initiated. Complete OAuth in the popup.",
-        "auth_url": "/auth/onedrive/connect",  # Frontend handles this
+        "auth_url": "/onedrive/connect",
     })
 
 

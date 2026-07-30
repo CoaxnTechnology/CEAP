@@ -1,0 +1,89 @@
+SCHOOL TRANSPORT STANDARD OPERATING PROCEDURE (SOP)
+Government Higher Secondary School, Chennai
+Ref No: SOP-TRANS-2025/003 | Version: 2.0 | Effective: 01-Apr-2025
+
+OBJECTIVE:
+Ensure safe and efficient transportation of all students using school transport facilities.
+
+SCOPE:
+Applies to all school-owned buses, hired buses, contract vehicles, and vans used
+for student transportation under school management.
+
+1. VEHICLE SPECIFICATIONS
+  - Colour: Golden Yellow as per AIS-063 standard
+  - Signage: "School Bus" on front and rear, "On School Duty" on hired vehicles
+  - School name and contact number visible on all vehicles
+  - Vehicle fitness certificate valid and displayed
+  - Insurance: Comprehensive third-party + personal accident cover
+  - GPS tracker: Mandatory, real-time monitoring active
+  - CCTV: Both interior and exterior, footage retained 30 days
+  - Speed Governor: Capped at 40 km/h, non-bypassable
+  - First-aid kit: Fully stocked, checked monthly
+  - Fire extinguisher: One per vehicle, annual servicing
+  - Horizontal grills on windows (no openable lower windows)
+  - Emergency exit door on all vehicles
+
+2. DRIVER REQUIREMENTS
+  - Minimum 4 years commercial driving experience
+  - Valid Heavy Motor Vehicle (HMV) driving license
+  - No traffic violations in past 3 years (verified from traffic police clearance)
+  - Medical fitness certificate renewed annually
+  - School uniform worn while driving
+  - Training: Annual defensive driving and first-aid refresher
+  - Background verification: Police verification conducted annually
+
+3. BUS ATTENDANT REQUIREMENTS
+  - Trained in first-aid and emergency response
+  - Female attendant mandatory for transport of younger students (Classes I-V)
+  - Attendance register maintained for all pickups/drop-offs
+  - Must verify student identity before allowing boarding/alighting
+  - Mobile phone available for emergency communication only
+
+4. ROUTE PLANNING
+  - Routes planned by Transport Committee with parent representatives
+  - Alternative routes identified for road closures/traffic congestion
+  - Maximum travel time to school: 45 minutes (one way)
+  - Pick-up and drop times communicated to parents 7 days in advance
+  - No vehicle stops without prior approval
+
+5. BOARDING AND ALIGHTING PROCEDURE
+  - Students must be at bus stop 5 minutes before scheduled time
+  - Bus attendant verifies student identity
+  - Students board in an orderly manner, seated promptly
+  - No standing while vehicle is in motion
+  - Students may alight only at designated stops
+  - Unclaimed students: Transported back to school, parents must collect within 1 hour
+
+6. EMERGENCY RESPONSE
+  6.1 Incident Protocol:
+    a) Bus attendant immediately notifies school transport coordinator
+    b) Transport coordinator activates Transport Emergency Response Team (TERT)
+    c) School principal notified within 5 minutes
+    d) Parents/guardians of affected student(s) notified within 30 minutes
+    e) Local administration and emergency services (108/112) called as needed
+    f) Incident documented on Form TR-01 (Transport Incident Report)
+    g) TERT reviews and submits action plan within 48 hours
+
+  6.2 Emergency Contact Numbers:
+    - School Principal: ___________
+    - Transport Coordinator: ___________
+    - Police Control Room: 100
+    - Ambulance: 108 / 112
+    - Fire Service: 101
+
+7. MONTHLY MAINTENANCE AND INSPECTION
+  - Daily pre-trip inspection checklist (driver + attendant)
+  - Weekly tire, brake, and light check
+  - Monthly full vehicle inspection by authorized mechanic
+  - Quarterly GPS and CCTV system audit
+  - Annual comprehensive roadworthiness test
+
+8. REVIEW AND COMPLIANCE
+  - SOP reviewed quarterly by Transport Committee
+  - Audit conducted every 6 months by external assessor
+  - Non-compliance may result in vehicle de-registration from school fleet
+  - Next review date: 01-Oct-2025
+
+Approved by: Principal Dr. Anita Desai
+Transport Head: Amit Joshi
+Date: 01-Apr-2025

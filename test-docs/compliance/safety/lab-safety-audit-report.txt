@@ -1,0 +1,24 @@
+LABORATORY SAFETY AUDIT REPORT — 2025
+Government Higher Secondary School, Chennai
+Audit Date: 20-Jun-2025 | Auditor: Meera Nair (Lab In-Charge)
+
+AUDIT AREAS:
+1. Chemistry Lab — Compliant
+2. Biology Lab — Compliant
+3. Physics Lab — COMPLIANCE GAPS FOUND
+4. General Safety Equipment — Compliant
+5. Emergency Procedures — Partial Compliance
+
+GAPS IDENTIFIED:
+⚠ Physics Lab — Safety goggles outdated (last stock check: Aug 2024)
+⚠ Physics Lab — Fume hood inspection overdue (due: Mar 2025)
+⚠ Chemistry Lab — One expired reagent (Sodium thiosulphate, expired Jan 2025)
+
+RECOMMENDATIONS:
+1. Restock safety goggles before 15-Aug-2025
+2. Schedule fume hood inspection — vendor: SafeTech Labs (contract: TC-2024-017)
+3. Dispose expired reagents per hazardous waste protocol
+4. Conduct safety drill for Physics section — target: 30-Sep-2025
+
+NEXT AUDIT DATE: 20-Dec-2025
+Report Status: Active (Outdated due to gaps — needs resolution before next accreditation)

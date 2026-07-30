@@ -13,6 +13,7 @@ from app.services.file_parser import extract_text_from_bytes, SUPPORTED_EXTS
 from app.services.persistence import get_document_by_source_ref
 from app.services.vector_store import EmbeddingServiceError
 from app.services.rag import current_user_key, register_and_index_for_user
+from app.services.classifier import classify
 
 onedrive_bp = Blueprint("onedrive", __name__)
 
@@ -167,6 +168,7 @@ def onedrive_import():
                 "text": text,
                 "size": item.get("size", 0),
                 "source_ref": item_id,
+                "path": item.get("path", ""),
             }
         except Exception as e:
             return "error", {"name": name, "error": str(e)}
@@ -187,6 +189,7 @@ def onedrive_import():
 
     for payload in prepared_items:
         try:
+            dept = classify(payload["text"], payload["name"])
             entry = register_and_index_for_user(
                 user_key,
                 payload["name"],
@@ -194,6 +197,8 @@ def onedrive_import():
                 payload["size"],
                 source="onedrive",
                 source_ref=payload["source_ref"],
+                department=dept,
+                file_path=payload.get("path", ""),
             )
             imported.append(entry)
         except EmbeddingServiceError as e:

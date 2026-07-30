@@ -16,6 +16,8 @@ from app.services.persistence import (
     set_message_feedback,
     update_chat_session_title,
 )
+from app.db import SessionLocal
+from app.models import Document
 from app.services.rag import get_store, get_registry, _user_key
 from app.services.gemini import GeminiServiceError, generate_answer, generate_answer_stream, generate_followup_suggestions, generate_answer_with_tools
 from app.services.vector_store import EmbeddingServiceError
@@ -173,8 +175,10 @@ def api_chat():
     data     = request.json or {}
     question = data.get("question", "").strip()
     file_ids = data.get("file_ids", [])
+    department = (data.get("department") or "").strip()
     session_id = (data.get("session_id") or "").strip() or None
     history  = data.get("history", [])
+    agent_scope = (data.get("agent_scope") or "").strip()
 
     if not question:
         return jsonify({"error": "No question provided"}), 400
@@ -222,12 +226,16 @@ def api_chat():
 
     history_for_tools = [{"role": msg["role"], "content": msg["content"]} for msg in recent] if recent else None
 
+    system_prompt = SYSTEM_PROMPT
+    if agent_scope:
+        system_prompt = f"You are an AI agent with the following role and scope: {agent_scope}\n\n{system_prompt}"
+
     tool_calls = []
     text = ""
 
     try:
         result = generate_answer_with_tools(
-            system_prompt=SYSTEM_PROMPT,
+            system_prompt=system_prompt,
             user_message=f"{history_block}\n\nUser question: {question}",
             tool_defs=ALL_TOOLS,
             history=history_for_tools,
@@ -321,6 +329,7 @@ def api_chat_stream():
     data     = request.json or {}
     question = data.get("question", "").strip()
     file_ids = data.get("file_ids", [])
+    department = (data.get("department") or "").strip()
     session_id = (data.get("session_id") or "").strip() or None
     history  = data.get("history", [])
 
@@ -348,6 +357,15 @@ def api_chat_stream():
         [fid for fid in file_ids if fid in registry and fid in indexed_file_ids]
         if file_ids else None
     )
+    if not source_filter and department:
+        db = SessionLocal()
+        doc_file_ids = [
+            r[0] for r in db.query(Document.file_id)
+            .filter(Document.user_key == user_key, Document.department == department)
+            .all()
+        ]
+        db.close()
+        source_filter = [fid for fid in doc_file_ids if fid in indexed_file_ids]
 
     if file_ids and not source_filter:
         return jsonify({

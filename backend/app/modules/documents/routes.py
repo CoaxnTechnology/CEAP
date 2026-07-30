@@ -20,6 +20,7 @@ from app.services.rag import (
     remove_from_vector_store_only,
 )
 from app.services.persistence import delete_document, list_categories
+from app.services.classifier import classify
 
 files_bp = Blueprint("files", __name__)
 
@@ -52,8 +53,10 @@ def api_upload():
             current_app.logger.warning("upload.no_text name=%s", file.filename)
             return jsonify({"success": False, "error": "Could not extract text"}), 400
         category_id = request.form.get("category_id") or None
+        department = classify(text, file.filename)
         entry = register_and_index(
-            file.filename, text, os.path.getsize(tmp_path), "local", category_id=category_id
+            file.filename, text, os.path.getsize(tmp_path), "local",
+            category_id=category_id, department=department,
         )
         total_ms = int((time.monotonic() - started) * 1000)
         current_app.logger.info(

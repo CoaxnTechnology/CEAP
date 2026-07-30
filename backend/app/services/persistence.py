@@ -268,6 +268,8 @@ def list_documents(user_key: str) -> dict:
                 "source": doc.source,
                 "source_ref": doc.source_ref,
                 "category_id": doc.category_id,
+                "department": doc.department,
+                "file_path": doc.file_path or "",
                 "tags": doc.tags or [],
             }
         return result
@@ -288,6 +290,7 @@ def save_document(user_key: str, file_id: str, entry: dict):
             existing.source = entry["source"]
             existing.source_ref = entry.get("source_ref", "")
             existing.category_id = entry.get("category_id") or existing.category_id
+            existing.department = entry.get("department") or existing.department
             existing.tags = entry.get("tags") or existing.tags
         else:
             doc = Document(
@@ -301,6 +304,7 @@ def save_document(user_key: str, file_id: str, entry: dict):
                 source=entry["source"],
                 source_ref=entry.get("source_ref", ""),
                 category_id=entry.get("category_id"),
+                department=entry.get("department"),
                 tags=entry.get("tags", []),
             )
             db.add(doc)

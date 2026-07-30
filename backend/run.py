@@ -1,6 +1,10 @@
 import os
+import warnings
 from pathlib import Path
 from dotenv import load_dotenv
+
+warnings.filterwarnings("ignore", message="resource_tracker: There appear to be .* leaked semaphore objects")
+
 from app import create_app
 from app.config import OneDriveConfig, GeminiConfig, DBConfig
 from app.services.vector_store import CHROMA_PATH
@@ -57,6 +61,60 @@ def index_repo_docs():
                 print(f"  [{i+1}/{len(docs)}] FAIL {doc.name} — {e}")
     finally:
         db.close()
+
+
+@app.cli.command("check-compliance-status")
+def check_compliance_status():
+    """Daily check: re-detect compliance evidence status from file content.
+
+    Scans all items with file_path, extracts text, and auto-updates status
+    if it has changed. Run daily via cron:  python run.py check-compliance-status
+    """
+    import tempfile
+    from app.db import SessionLocal
+    from app.models import ComplianceEvidence
+    from app.services.compliance_classifier import detect_compliance_status
+    from app.services.file_parser import extract_text
+
+    db = SessionLocal()
+    items = db.query(ComplianceEvidence).filter(
+        ComplianceEvidence.file_path != "",
+        ComplianceEvidence.file_path.isnot(None),
+    ).all()
+    print(f"Checking {len(items)} evidence items for status updates...")
+
+    updated = 0
+    for item in items:
+        if not os.path.exists(item.file_path):
+            print(f"  SKIP {item.title} — file not found at {item.file_path}")
+            continue
+        try:
+            ext = os.path.splitext(item.file_path)[1].lower()
+            if ext not in {'.pdf', '.docx', '.pptx', '.xlsx', '.xls', '.csv', '.txt'}:
+                continue
+            with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+                with open(item.file_path, "rb") as src:
+                    tmp.write(src.read())
+                tmp_path = tmp.name
+            text = extract_text(tmp_path, item.source_name or item.title)
+            os.unlink(tmp_path)
+            if not text:
+                print(f"  SKIP {item.title} — no text extracted")
+                continue
+            new_status = detect_compliance_status(text)
+            if new_status and new_status != item.status:
+                old_status = item.status
+                item.status = new_status
+                item.last_updated = time.strftime("%Y-%m-%d")
+                db.commit()
+                updated += 1
+                print(f"  OK {item.title}: {old_status} → {new_status}")
+        except Exception as e:
+            db.rollback()
+            print(f"  FAIL {item.title} — {e}")
+
+    print(f"\nDone. {updated} item(s) updated out of {len(items)} checked.")
+    db.close()
 
 
 if __name__ == "__main__":

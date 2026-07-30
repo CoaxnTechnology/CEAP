@@ -51,6 +51,9 @@ def api_upload():
         if not text:
             current_app.logger.warning("upload.no_text name=%s", file.filename)
             return jsonify({"success": False, "error": "Could not extract text"}), 400
+        registry = get_registry()
+        if any(e.get("name") == file.filename for e in registry.values()):
+            return jsonify({"success": False, "error": f"File '{file.filename}' already exists"}), 409
         category_id = request.form.get("category_id") or None
         entry = register_and_index(
             file.filename, text, os.path.getsize(tmp_path), "local", category_id=category_id
