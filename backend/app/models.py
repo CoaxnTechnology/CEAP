@@ -1,9 +1,19 @@
-import uuid
 import time
+import uuid
+
 from sqlalchemy import (
-    Column, String, Integer, Float, Text, JSON, ForeignKey, UniqueConstraint, Index
+    JSON,
+    Column,
+    Float,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
 )
-from sqlalchemy.orm import relationship, backref
+from sqlalchemy.orm import backref, relationship
+
 from app.db import Base
 
 
@@ -112,6 +122,7 @@ class Document(Base):
     tags = Column(JSON, default=list)
     version = Column(Integer, default=1)
     file_path = Column(String(500), default="")
+    student_id = Column(String(64), default="")
 
     category = relationship("DocumentCategory", backref="documents")
 
@@ -168,6 +179,7 @@ class LeaveRequest(Base):
     leave_type = Column(String(50), nullable=False)
     start_date = Column(String(20), nullable=False)
     end_date = Column(String(20), nullable=False)
+    half_day = Column(Integer, default=0)
     reason = Column(Text, default="")
     status = Column(String(20), default="pending")
     approved_by = Column(String(255), default="")
@@ -280,6 +292,133 @@ class ApprovalRequest(Base):
     metadata_json = Column(JSON, default=dict)
     steps_json = Column(JSON, default=list)
     current_step = Column(Integer, default=0)
+    created_at = Column(Float, default=_ts)
+    updated_at = Column(Float, default=_ts, onupdate=_ts)
+
+
+class JobRequisition(Base):
+    __tablename__ = "job_requisitions"
+
+    id = Column(String(64), primary_key=True, default=_uuid)
+    user_key = Column(String(64), nullable=False)
+    title = Column(String(255), nullable=False)
+    department = Column(String(100), default="")
+    status = Column(String(20), default="open")
+    created_at = Column(Float, default=_ts)
+
+
+class FinanceAccount(Base):
+    __tablename__ = "finance_accounts"
+
+    id = Column(String(64), primary_key=True, default=_uuid)
+    user_key = Column(String(64), nullable=False)
+    student_name = Column(String(255), nullable=False)
+    class_name = Column(String(20), default="")
+    family_email = Column(String(255), default="")
+    outstanding = Column(Float, default=0.0)
+    overdue_days = Column(Integer, default=0)
+    predicted_default = Column(Integer, default=0)
+    scholarship = Column(Integer, default=0)
+    created_at = Column(Float, default=_ts)
+
+
+class FeeWaiver(Base):
+    __tablename__ = "fee_waivers"
+
+    id = Column(String(64), primary_key=True, default=_uuid)
+    user_key = Column(String(64), nullable=False)
+    student_name = Column(String(255), default="")
+    class_name = Column(String(20), default="")
+    family_email = Column(String(255), default="")
+    amount = Column(Float, default=0.0)
+    reason = Column(Text, default="")
+    status = Column(String(20), default="pending")
+    created_at = Column(Float, default=_ts)
+
+
+class MonthlyCollection(Base):
+    __tablename__ = "monthly_collections"
+
+    id = Column(String(64), primary_key=True, default=_uuid)
+    user_key = Column(String(64), nullable=False)
+    month = Column(String(10), nullable=False)
+    amount_lakhs = Column(Float, default=0.0)
+
+
+class AdmissionApplication(Base):
+    __tablename__ = "admission_applications"
+
+    id = Column(String(64), primary_key=True, default=_uuid)
+    user_key = Column(String(64), nullable=False)
+    student_name = Column(String(255), nullable=False)
+    grade = Column(String(20), default="")
+    stage = Column(String(20), default="Applied")
+    score = Column(Integer, default=0)
+    counselor = Column(String(255), default="")
+    parent_name = Column(String(255), default="")
+    parent_contact = Column(String(50), default="")
+    date = Column(String(20), default="")
+    student_id = Column(String(64), default="")
+    created_at = Column(Float, default=_ts)
+
+
+class Student(Base):
+    __tablename__ = "students"
+
+    id = Column(String(64), primary_key=True, default=_uuid)
+    user_key = Column(String(64), nullable=False)
+    name = Column(String(255), nullable=False)
+    class_name = Column(String(20), default="")
+    roll = Column(String(20), default="")
+    admission_no = Column(String(100), default="")
+    gender = Column(String(10), default="")
+    dob = Column(String(20), default="")
+    house = Column(String(20), default="")
+    risk_score = Column(Integer, default=0)
+    risk_level = Column(String(20), default="Low")
+    attendance = Column(Integer, default=100)
+    fees_due = Column(Float, default=0.0)
+    fees_status = Column(String(20), default="Cleared")
+    gpa = Column(Float, default=0.0)
+    parent_name = Column(String(255), default="")
+    parent_phone = Column(String(50), default="")
+    parent_email = Column(String(255), default="")
+    parent_relation = Column(String(50), default="")
+    blood_group = Column(String(10), default="")
+    behavior = Column(Text, default="")
+    recommendations_json = Column(JSON, default=list)
+    achievements_json = Column(JSON, default=list)
+    medical_json = Column(JSON, default=dict)
+    timeline_json = Column(JSON, default=list)
+    documents_json = Column(JSON, default=list)
+    ai_summary = Column(Text, default="")
+    admission_id = Column(String(64), default="")
+    created_at = Column(Float, default=_ts)
+
+
+class CalendarEvent(Base):
+    __tablename__ = "calendar_events"
+
+    id = Column(String(64), primary_key=True, default=_uuid)
+    user_key = Column(String(64), nullable=False)
+    title = Column(String(255), nullable=False)
+    date = Column(String(20), nullable=False)
+    time = Column(String(20), default="")
+    type = Column(String(20), default="Meeting")
+    status = Column(String(20), default="Upcoming")
+    created_at = Column(Float, default=_ts)
+
+
+class HRPolicy(Base):
+    __tablename__ = "hr_policies"
+
+    id = Column(String(64), primary_key=True, default=_uuid)
+    user_key = Column(String(64), nullable=False)
+    name = Column(String(255), nullable=False)
+    category = Column(String(50), default="leave")  # leave, attendance, conduct, general, ...
+    content = Column(Text, nullable=False)
+    rules_json = Column(JSON, default=dict)
+    active = Column(Integer, default=0)
     created_at = Column(Float, default=_ts)
     updated_at = Column(Float, default=_ts, onupdate=_ts)
 
@@ -561,3 +700,53 @@ class ActivityLog(Base):
         Index("idx_activity_action", action, created_at.desc()),
         Index("idx_activity_created", created_at.desc()),
     )
+
+
+class StudentCommunication(Base):
+    __tablename__ = "student_communications"
+
+    id = Column(String(64), primary_key=True, default=_uuid)
+    user_key = Column(String(64), nullable=False)
+    student_id = Column(String(64), nullable=False)
+    channel = Column(String(20), default="call")
+    subject = Column(String(255), default="")
+    body = Column(Text, default="")
+    author = Column(String(255), default="")
+    created_at = Column(Float, default=_ts)
+
+
+class CoverageEntry(Base):
+    __tablename__ = "coverage_entries"
+
+    id = Column(String(64), primary_key=True, default=_uuid)
+    user_key = Column(String(64), nullable=False)
+    department = Column(String(100), nullable=False)
+    class_name = Column(String(20), default="")
+    coverage = Column(Integer, default=0)
+    updated_at = Column(Float, default=_ts)
+
+
+class Assessment(Base):
+    __tablename__ = "assessments"
+
+    id = Column(String(64), primary_key=True, default=_uuid)
+    user_key = Column(String(64), nullable=False)
+    department = Column(String(100), default="")
+    class_name = Column(String(20), default="")
+    title = Column(String(255), default="")
+    teacher = Column(String(255), default="")
+    due_date = Column(String(20), default="")
+    status = Column(String(20), default="scheduled")  # scheduled | graded
+    created_at = Column(Float, default=_ts)
+
+
+class ClassAttendance(Base):
+    __tablename__ = "class_attendances"
+
+    id = Column(String(64), primary_key=True, default=_uuid)
+    user_key = Column(String(64), nullable=False)
+    class_name = Column(String(20), nullable=False)
+    date = Column(String(20), default="")
+    present = Column(Integer, default=0)
+    total = Column(Integer, default=0)
+    recorded_at = Column(Float, default=_ts)

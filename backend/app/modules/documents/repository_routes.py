@@ -38,6 +38,7 @@ def _doc_to_dict(doc):
         "indexed": bool(doc.file_id),
         "category_id": doc.category_id,
         "department_id": doc.department_id,
+        "department_name": doc.department.name if doc.department else None,
         "tags": doc.tags or [],
         "owner_email": doc.owner_email,
         "description": doc.description,
@@ -314,6 +315,8 @@ def upload_document():
             db.refresh(doc)
 
             # Index for RAG chat (non-blocking on failure)
+            indexed = False
+            index_error = ""
             try:
                 text = extract_text(result["file_path"], filename)
                 if text:
@@ -328,10 +331,16 @@ def upload_document():
                     )
                     doc.file_id = rag_entry["file_id"]
                     db.commit()
-            except Exception:
-                pass
+                    indexed = True
+            except Exception as e:
+                index_error = str(e)[:200]
 
-            return jsonify({"success": True, "document": _doc_to_dict(doc)}), 201
+            return jsonify({
+                "success": True,
+                "document": _doc_to_dict(doc),
+                "indexed": indexed,
+                **({"warning": f"Saved but not searchable in AI Chat: {index_error}"} if not indexed and index_error else {}),
+            }), 201
         finally:
             db.close()
     finally:

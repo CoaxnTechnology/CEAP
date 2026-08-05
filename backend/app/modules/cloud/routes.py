@@ -21,6 +21,9 @@ onedrive_bp = Blueprint("onedrive", __name__)
 @onedrive_bp.route("/onedrive/connect")
 @login_required
 def onedrive_connect():
+    redirect_url = request.args.get("redirect", "")
+    if redirect_url:
+        session["od_redirect"] = redirect_url
     if not OneDriveConfig.is_enabled():
         return jsonify(
             {
@@ -59,8 +62,9 @@ def onedrive_callback():
     session["od_token"] = token
     session["od_user"] = od_user
     session["od_email"] = od_email
+    target = session.pop("od_redirect", None) or url_for("auth.catch_all", path="admin")
     return redirect(
-        url_for("auth.repository") + f"?od_connected=1&od_name={od_user}&od_email={od_email}"
+        f"{target}?od_connected=1&od_name={od_user}&od_email={od_email}"
     )
 
 
@@ -72,7 +76,7 @@ def onedrive_disconnect():
     session.pop("od_user", None)
     session.pop("od_email", None)
     if request.method == "GET":
-        return redirect(url_for("auth.repository"))
+        return redirect(url_for("auth.catch_all", path="admin"))
     return jsonify({"success": True})
 
 

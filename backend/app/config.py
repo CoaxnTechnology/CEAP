@@ -34,9 +34,9 @@ class OneDriveConfig:
         return bool(cls.CLIENT_ID and cls.CLIENT_SECRET)
 
 
-class GeminiConfig:
-    API_KEY = os.getenv("GEMINI_API_KEY")
-    MODEL = "gemini-3.5-flash-lite"
+class GroqConfig:
+    API_KEY = os.getenv("GROQ_API_KEY")
+    MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
 
 
 class DBConfig:

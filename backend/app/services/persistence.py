@@ -270,6 +270,7 @@ def list_documents(user_key: str) -> dict:
                 "category_id": doc.category_id,
                 "department": doc.department,
                 "file_path": doc.file_path or "",
+                "student_id": doc.student_id or "",
                 "tags": doc.tags or [],
             }
         return result
@@ -292,6 +293,7 @@ def save_document(user_key: str, file_id: str, entry: dict):
             existing.category_id = entry.get("category_id") or existing.category_id
             existing.department = entry.get("department") or existing.department
             existing.tags = entry.get("tags") or existing.tags
+            existing.student_id = entry.get("student_id", "") or existing.student_id
         else:
             doc = Document(
                 file_id=file_id,
@@ -306,6 +308,7 @@ def save_document(user_key: str, file_id: str, entry: dict):
                 category_id=entry.get("category_id"),
                 department=entry.get("department"),
                 tags=entry.get("tags", []),
+                student_id=entry.get("student_id", ""),
             )
             db.add(doc)
         db.commit()
@@ -336,6 +339,7 @@ def get_document_by_source_ref(user_key: str, source_ref: str, source: str | Non
             "uploaded_at": doc.uploaded_at,
             "source": doc.source,
             "source_ref": doc.source_ref,
+            "student_id": doc.student_id or "",
         }
     finally:
         db.close()

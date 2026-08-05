@@ -1,12 +1,14 @@
 """CEAP for Schools — Flask application package."""
 
+import logging
 import os
 import warnings
-import logging
 from logging.handlers import RotatingFileHandler
+
 from flask import Flask
-from flask_wtf.csrf import CSRFProtect
 from flask_cors import CORS
+from flask_wtf.csrf import CSRFProtect
+
 from app.config import Config
 from app.db import init_db as init_sqlalchemy_db
 from app.services.persistence import init_users_from_config
@@ -25,15 +27,23 @@ def create_app():
 
     CORS(app, supports_credentials=True)
 
+    from app.modules.academic.routes import academic_bp
     from app.modules.admin.routes import auth_bp
-    from app.modules.documents.routes import files_bp
-    from app.modules.cloud.routes import onedrive_bp
+    from app.modules.admissions.routes import admissions_bp
     from app.modules.ai.routes import chat_bp
     from app.modules.ai.studio_routes import studio_bp
-    from app.modules.documents.repository_routes import repo_bp
-    from app.modules.onboarding.routes import onboarding_bp
-    from app.modules.knowledge.routes import knowledge_bp
+    from app.modules.calendar.routes import calendar_bp
+    from app.modules.cloud.routes import onedrive_bp
     from app.modules.compliance.routes import compliance_bp
+    from app.modules.documents.repository_routes import repo_bp
+    from app.modules.documents.routes import files_bp
+    from app.modules.executive.routes import executive_bp
+    from app.modules.finance.routes import finance_bp
+    from app.modules.hr.routes import hr_bp
+    from app.modules.knowledge.routes import knowledge_bp
+    from app.modules.onboarding.routes import onboarding_bp
+    from app.modules.operations.routes import ops_bp
+    from app.modules.students.routes import students_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(files_bp)
@@ -44,6 +54,14 @@ def create_app():
     app.register_blueprint(onboarding_bp)
     app.register_blueprint(knowledge_bp)
     app.register_blueprint(compliance_bp)
+    app.register_blueprint(hr_bp)
+    app.register_blueprint(finance_bp)
+    app.register_blueprint(admissions_bp)
+    app.register_blueprint(students_bp)
+    app.register_blueprint(calendar_bp)
+    app.register_blueprint(academic_bp)
+    app.register_blueprint(executive_bp)
+    app.register_blueprint(ops_bp)
 
     with app.app_context():
         init_sqlalchemy_db()
@@ -51,6 +69,28 @@ def create_app():
         init_users_from_config()
         from app.modules.ai.studio_routes import seed_templates_if_empty
         seed_templates_if_empty()
+        from app.modules.hr.routes import seed_hr_if_empty
+        seed_hr_if_empty()
+        from app.modules.finance.routes import seed_finance_if_empty
+        seed_finance_if_empty()
+        from app.modules.admissions.routes import seed_admissions_if_empty
+        seed_admissions_if_empty()
+        from app.modules.students.routes import (
+            seed_communications_if_empty,
+            seed_documents_if_empty,
+            seed_students_if_empty,
+        )
+        seed_students_if_empty()
+        seed_communications_if_empty()
+        seed_documents_if_empty()
+        from app.modules.calendar.routes import seed_calendar_if_empty
+        seed_calendar_if_empty()
+        from app.modules.academic.routes import seed_academic_if_empty
+        seed_academic_if_empty()
+        from app.modules.executive.routes import seed_executive_if_empty
+        seed_executive_if_empty()
+        from app.modules.operations.routes import seed_tasks_if_empty
+        seed_tasks_if_empty()
 
     csrf.init_app(app)
     csrf.exempt(auth_bp)
@@ -62,6 +102,14 @@ def create_app():
     csrf.exempt(onboarding_bp)
     csrf.exempt(knowledge_bp)
     csrf.exempt(compliance_bp)
+    csrf.exempt(hr_bp)
+    csrf.exempt(finance_bp)
+    csrf.exempt(admissions_bp)
+    csrf.exempt(students_bp)
+    csrf.exempt(calendar_bp)
+    csrf.exempt(academic_bp)
+    csrf.exempt(executive_bp)
+    csrf.exempt(ops_bp)
 
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     logs_dir = os.path.join(os.path.dirname(base_dir), "logs")

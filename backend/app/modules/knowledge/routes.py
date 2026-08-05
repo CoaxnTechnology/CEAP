@@ -5,7 +5,7 @@ from flask import Blueprint, request, jsonify
 from sqlalchemy import desc
 from app.auth_helpers import login_required
 from app.db import SessionLocal
-from app.models import KnowledgeCard, Document
+from app.models import KnowledgeCard, Document, ActivityLog, RepositoryDocument, Department
 from app.services.rag import _user_key
 
 knowledge_bp = Blueprint("knowledge", __name__)
@@ -33,12 +33,13 @@ def list_cards():
         ts = d.uploaded_at
         updated = datetime.fromtimestamp(ts).strftime("%Y-%m-%d") if ts else ""
         title = os.path.splitext(d.name)[0] if d.name else "Untitled"
+        stale = bool(ts) and (time.time() - ts) > 365 * 86400
         doc_cards.append({
             "id": f"doc_{d.file_id}",
             "title": title,
             "type": "Document",
             "dept": d.department or "",
-            "status": "Current",
+            "status": "Outdated" if stale else "Current",
             "summary": d.name or "",
             "relations": d.chunks or 0,
             "updated": updated,
@@ -166,3 +167,113 @@ def list_types():
     result = sorted(set(t[0] for t in types))
     result.insert(0, "Document")
     return jsonify({"types": result})
+
+
+KIND_MAP = {
+    "login": "Login", "logout": "Logout", "upload": "Document", "delete": "Document",
+    "download": "Document", "generate_pack": "Document", "download_pack": "Document",
+    "approve": "Approval", "chat": "Discussion", "search": "Search",
+}
+
+KIND_COLORS = {
+    "Decision": "bg-violet-500", "Meeting": "bg-navy-600", "Approval": "bg-emerald-500",
+    "Policy": "bg-amber-500", "Discussion": "bg-sky-500", "Document": "bg-slate-500",
+    "Login": "bg-slate-400", "Search": "bg-slate-400", "Logout": "bg-slate-400",
+}
+
+
+@knowledge_bp.route("/api/knowledge/memory", methods=["GET"])
+@login_required
+def list_memory():
+    user_key = _user_key()
+    db = SessionLocal()
+    try:
+        logs = db.query(ActivityLog).filter(
+            ActivityLog.user_email == user_key,
+        ).order_by(desc(ActivityLog.created_at)).limit(50).all()
+
+        memory = []
+        for log in logs:
+            kind = KIND_MAP.get(log.action, "Document")
+            when = datetime.fromtimestamp(log.created_at).strftime("%Y-%m-%d %H:%M") if log.created_at else ""
+            title = log.details or log.resource_name or log.action
+            if len(title) > 80:
+                title = title[:80] + "…"
+            memory.append({
+                "id": log.id,
+                "when": when,
+                "kind": kind,
+                "title": title,
+                "actor": log.user_email,
+                "tags": [log.resource_type] if log.resource_type else [],
+                "color": KIND_COLORS.get(kind, "bg-slate-500"),
+            })
+
+        return jsonify(memory)
+    finally:
+        db.close()
+
+
+@knowledge_bp.route("/api/search", methods=["GET"])
+@login_required
+def search_all():
+    q = request.args.get("q", "").strip()
+    user_key = _user_key()
+    db = SessionLocal()
+    try:
+        results = []
+
+        if q:
+            like = f"%{q}%"
+            repo_docs = db.query(RepositoryDocument).filter(
+                RepositoryDocument.user_key == user_key,
+                RepositoryDocument.status == "active",
+                RepositoryDocument.name.ilike(like),
+            ).order_by(desc(RepositoryDocument.updated_at)).limit(20).all()
+
+            for d in repo_docs:
+                dept_name = ""
+                if d.department_id:
+                    dept = db.query(Department).filter(Department.id == d.department_id).first()
+                    dept_name = dept.name if dept else ""
+                results.append({
+                    "id": d.id,
+                    "title": d.name,
+                    "snippet": d.description or "",
+                    "status": "Current" if d.status == "active" else d.status,
+                    "department": dept_name,
+                    "type": "Document",
+                    "year": datetime.fromtimestamp(d.created_at).strftime("%Y") if d.created_at else "",
+                    "citation": "",
+                    "lastUpdated": datetime.fromtimestamp(d.updated_at).strftime("%Y-%m-%d") if d.updated_at else "",
+                    "owner": d.owner_email,
+                    "source": "repository",
+                })
+        else:
+            repo_docs = db.query(RepositoryDocument).filter(
+                RepositoryDocument.user_key == user_key,
+                RepositoryDocument.status == "active",
+            ).order_by(desc(RepositoryDocument.updated_at)).limit(20).all()
+
+            for d in repo_docs:
+                dept_name = ""
+                if d.department_id:
+                    dept = db.query(Department).filter(Department.id == d.department_id).first()
+                    dept_name = dept.name if dept else ""
+                results.append({
+                    "id": d.id,
+                    "title": d.name,
+                    "snippet": d.description or "",
+                    "status": "Current" if d.status == "active" else d.status,
+                    "department": dept_name,
+                    "type": "Document",
+                    "year": datetime.fromtimestamp(d.created_at).strftime("%Y") if d.created_at else "",
+                    "citation": "",
+                    "lastUpdated": datetime.fromtimestamp(d.updated_at).strftime("%Y-%m-%d") if d.updated_at else "",
+                    "owner": d.owner_email,
+                    "source": "repository",
+                })
+
+        return jsonify({"results": results, "total": len(results)})
+    finally:
+        db.close()

@@ -1,0 +1,5 @@
+Staff Leave Policy
+Leave requests are submitted through the HR portal and routed for approval.
+Approval chain: leave routes to the department head for the employee's department. If no department head is configured, the employee's manager approves. Otherwise the school admin (Principal) approves.
+Heads of Department (HODs) report to the Principal; HOD leave is approved by the school admin (Principal). Staff cannot approve their own leave.
+Leave types: Annual 20 days, Earned 20 days, Sick 12 days, Personal/Casual 5 days, Maternity 180 days, Paternity 15 days.

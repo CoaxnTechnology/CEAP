@@ -219,6 +219,9 @@ def create_school():
             status="active",
             created_at=time.time(),
         )
+        existing = db.query(School).filter(School.code == school.code).first()
+        if existing:
+            return jsonify({"error": f'School code "{school.code}" is already in use. Please choose a different code.'}), 400
         db.add(school)
         db.flush()
 

@@ -6,7 +6,7 @@ from dotenv import load_dotenv
 warnings.filterwarnings("ignore", message="resource_tracker: There appear to be .* leaked semaphore objects")
 
 from app import create_app
-from app.config import OneDriveConfig, GeminiConfig, DBConfig
+from app.config import OneDriveConfig, GroqConfig, DBConfig
 from app.services.vector_store import CHROMA_PATH
 
 load_dotenv(Path(__file__).parent / '.env')
@@ -126,7 +126,7 @@ if __name__ == "__main__":
     print(f"    Database              : ✅ {db_type}  ({DBConfig.URL.split('://')[0]})")
     print(f"    Vector DB             : ✅ ChromaDB persistent  ({CHROMA_PATH})")
     print(f"    Search mode           : ✅ Hybrid (Chroma HNSW + BM25 + RRF)")
-    print(f"    Gemini API key        : {'✅ set' if GeminiConfig.API_KEY else '❌ missing'}")
+    print(f"    Groq LLM key          : {'✅ set' if GroqConfig.API_KEY else '❌ missing'} ({GroqConfig.MODEL})")
     print(f"    OneDrive integration  : {'✅ configured' if OneDriveConfig.is_enabled() else '❌ not configured (set AZURE_* in .env)'}")
     print(f"\n School Features:")
     print(f"    Staff                 : ✅ Leave mgmt, attendance, policies, approvals")
