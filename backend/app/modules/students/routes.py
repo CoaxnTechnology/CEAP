@@ -55,6 +55,28 @@ def _serialize(s, full=False):
     if not full:
         return data
 
+    marks = s.marks_json or []
+    subject_marks = {}
+    for m in marks:
+        subject_marks.setdefault(m.get("subject"), []).append(m)
+    trends = []
+    for subject, rows in subject_marks.items():
+        keyed = [(r.get("date") or r.get("period") or "", r.get("mark")) for r in rows]
+        dated = [r for r in keyed if r[0]]
+        vals = dated if len(dated) >= 2 else keyed
+        orderable = [r for r in vals if r[0]]
+        if len(orderable) >= 2:
+            orderable.sort(key=lambda r: r[0])
+            a, b = orderable[-1][1], orderable[-2][1]
+        else:
+            a = vals[-1][1] if vals else None
+            b = vals[-2][1] if len(vals) >= 2 else None
+        if a is not None and b is not None and a != b:
+            arrow = "\u2191" if a > b else "\u2193"
+        else:
+            arrow = "\u2192"
+        trends.append({"subject": subject, "trend": arrow})
+
     data.update({
         "recommendations": s.recommendations_json or [],
         "achievements": s.achievements_json or [],
@@ -62,6 +84,8 @@ def _serialize(s, full=False):
         "behavior": s.behavior,
         "timeline": s.timeline_json or [],
         "documents": s.documents_json or [],
+        "marks": marks,
+        "subjectTrends": trends,
     })
     return data
 
@@ -96,6 +120,79 @@ def get_student(student_id):
         db.close()
 
 
+_UPDATE_MAP = {
+    "name": "name",
+    "class": "class_name",
+    "roll": "roll",
+    "gender": "gender",
+    "dob": "dob",
+    "house": "house",
+    "bloodGroup": "blood_group",
+    "admissionNo": "admission_no",
+    "riskScore": "risk_score",
+    "riskLevel": "risk_level",
+    "attendance": "attendance",
+    "feesDue": "fees_due",
+    "feesStatus": "fees_status",
+    "gpa": "gpa",
+    "behavior": "behavior",
+    "aiSummary": "ai_summary",
+}
+
+
+@students_bp.route("/api/students/<student_id>", methods=["PUT"])
+@login_required
+def update_student(student_id):
+    data = request.get_json(silent=True) or {}
+    db = SessionLocal()
+    try:
+        s = db.query(Student).filter(Student.id == student_id).first()
+        if not s:
+            return jsonify({"error": "Student not found"}), 404
+        for src, dst in _UPDATE_MAP.items():
+            if src in data:
+                setattr(s, dst, data[src])
+        if "parent" in data and isinstance(data["parent"], dict):
+            for src, dst in {
+                "name": "parent_name",
+                "phone": "parent_phone",
+                "email": "parent_email",
+                "relation": "parent_relation",
+            }.items():
+                if src in data["parent"]:
+                    setattr(s, dst, data["parent"][src])
+        if "medical" in data and isinstance(data["medical"], dict):
+            s.medical_json = {**(s.medical_json or {}), **data["medical"]}
+        if "recommendations" in data:
+            s.recommendations_json = data["recommendations"]
+        if "achievements" in data:
+            s.achievements_json = data["achievements"]
+        if "timeline" in data:
+            s.timeline_json = data["timeline"]
+        if "marks" in data:
+            s.marks_json = data["marks"]
+        db.commit()
+        db.refresh(s)
+        return jsonify(_serialize(s, full=True))
+    finally:
+        db.close()
+
+
+@students_bp.route("/api/students/<student_id>", methods=["DELETE"])
+@login_required
+def delete_student(student_id):
+    db = SessionLocal()
+    try:
+        s = db.query(Student).filter(Student.id == student_id).first()
+        if not s:
+            return jsonify({"error": "Student not found"}), 404
+        db.delete(s)
+        db.commit()
+        return jsonify({"success": True})
+    finally:
+        db.close()
+
+
 DEMO_TIMELINE_S1 = [
     {"id": 1, "date": "2025-07-25", "type": "attendance", "title": "Absent – uninformed", "detail": "Class 10-A period 1–4"},
     {"id": 2, "date": "2025-07-20", "type": "fees", "title": "Fee reminder sent", "detail": "Installment 3 overdue ₹45,000"},
@@ -120,6 +217,50 @@ DEMO_DOCS_S1 = [
     {"id": 4, "name": "Fee Receipt Apr.pdf", "type": "Finance", "updated": "2025-04-05"},
     {"id": 5, "name": "Asthma Action Plan.pdf", "type": "Medical", "updated": "2025-06-01"},
 ]
+
+
+DEMO_MARKS = {
+    "Aarav Mehta": [
+        {"subject": "Math", "period": "Term 1", "mark": 58},
+        {"subject": "Math", "period": "Term 2", "mark": 52},
+        {"subject": "Science", "period": "Term 1", "mark": 62},
+        {"subject": "Science", "period": "Term 2", "mark": 62},
+        {"subject": "Languages", "period": "Term 1", "mark": 68},
+        {"subject": "Languages", "period": "Term 2", "mark": 74},
+    ],
+    "Ananya Krishnan": [
+        {"subject": "Math", "period": "Term 1", "mark": 88},
+        {"subject": "Math", "period": "Term 2", "mark": 94},
+        {"subject": "Science", "period": "Term 1", "mark": 90},
+        {"subject": "Science", "period": "Term 2", "mark": 89},
+        {"subject": "Languages", "period": "Term 1", "mark": 92},
+        {"subject": "Languages", "period": "Term 2", "mark": 95},
+    ],
+    "Vihaan Patel": [
+        {"subject": "Math", "period": "Term 1", "mark": 74},
+        {"subject": "Math", "period": "Term 2", "mark": 78},
+        {"subject": "Science", "period": "Term 1", "mark": 71},
+        {"subject": "Science", "period": "Term 2", "mark": 69},
+        {"subject": "Languages", "period": "Term 1", "mark": 80},
+        {"subject": "Languages", "period": "Term 2", "mark": 82},
+    ],
+    "Sara Khan": [
+        {"subject": "Math", "period": "Term 1", "mark": 85},
+        {"subject": "Math", "period": "Term 2", "mark": 88},
+        {"subject": "Science", "period": "Term 1", "mark": 82},
+        {"subject": "Science", "period": "Term 2", "mark": 86},
+        {"subject": "Languages", "period": "Term 1", "mark": 90},
+        {"subject": "Languages", "period": "Term 2", "mark": 93},
+    ],
+    "Kabir Sharma": [
+        {"subject": "Math", "period": "Term 1", "mark": 55},
+        {"subject": "Math", "period": "Term 2", "mark": 47},
+        {"subject": "Science", "period": "Term 1", "mark": 50},
+        {"subject": "Science", "period": "Term 2", "mark": 53},
+        {"subject": "Languages", "period": "Term 1", "mark": 60},
+        {"subject": "Languages", "period": "Term 2", "mark": 57},
+    ],
+}
 
 
 DEMO_STUDENTS = [
@@ -195,7 +336,8 @@ def seed_students_if_empty():
             existing = {s.name for s in db.query(Student).filter(Student.user_key == user_key).all()}
             for row in DEMO_STUDENTS:
                 if row["name"] not in existing:
-                    db.add(Student(user_key=user_key, **row))
+                    entry = {**row, "marks_json": DEMO_MARKS.get(row["name"], [])}
+                    db.add(Student(user_key=user_key, **entry))
             db.commit()
     finally:
         db.close()

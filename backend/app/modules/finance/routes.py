@@ -14,10 +14,10 @@ from app.models import (
 from app.services.gemini import generate_recommendations
 from app.services.rag import _user_key
 from app.services.workflow_engine import create_approval_request
+from app.modules.settings.routes import get_targets
 
 finance_bp = Blueprint("finance", __name__)
 
-MTD_TARGET = 5200000
 SCHOLARSHIP_BUDGET = 800000
 SCHOLARSHIP_USED = 180000
 MONTH_ORDER = {m: i for i, m in enumerate(
@@ -44,6 +44,7 @@ def overview():
             .filter(FinanceAccount.user_key == user_key)
             .all()
         )
+        mtd_target = get_targets(db, user_key)["revenue_mtd"]
 
         outstanding = sum(a.outstanding for a in accounts)
         families = len({a.family_email for a in accounts if a.family_email})
@@ -82,7 +83,7 @@ def overview():
 
         insights = generate_recommendations(
             (
-                f"MTD collections: ₹{mtd_collected / 100000:.1f}L vs target ₹{MTD_TARGET / 100000:.0f}L.\n"
+                f"MTD collections: ₹{mtd_collected / 100000:.1f}L vs target ₹{mtd_target / 100000:.0f}L.\n"
                 f"Outstanding: ₹{outstanding / 100000:.1f}L across {families} families "
                 f"({predicted} predicted to default).\n"
                 f"Class 10 & 12 share of outstanding: {round(class_10_12 / total * 100)}%.\n"
@@ -110,7 +111,7 @@ def overview():
         return jsonify({
             "kpis": {
                 "mtdCollected": mtd_collected,
-                "target": MTD_TARGET,
+                "target": mtd_target,
                 "outstanding": outstanding,
                 "predictedDefaulters": predicted,
                 "scholarships": scholarships,
@@ -202,6 +203,35 @@ def create_waiver():
             "id": waiver.id,
             "message": f"Fee waiver for {student_name} sent to Approvals for review.",
         })
+    finally:
+        db.close()
+
+
+@finance_bp.route("/api/finance/collections", methods=["PUT"])
+@login_required
+def update_collections():
+    user_key = _user_key()
+    db = SessionLocal()
+    try:
+        data = request.get_json(silent=True) or []
+        if not isinstance(data, list):
+            return jsonify({"error": "expected list of {month, amountLakhs}"}), 400
+        for row in data:
+            month = (row.get("month") or "").strip()
+            amount = float(row.get("amountLakhs") or 0)
+            if month not in MONTH_ORDER:
+                return jsonify({"error": f"unknown month {month!r}"}), 400
+            existing = (
+                db.query(MonthlyCollection)
+                .filter(MonthlyCollection.user_key == user_key, MonthlyCollection.month == month)
+                .first()
+            )
+            if existing:
+                existing.amount_lakhs = amount
+            else:
+                db.add(MonthlyCollection(user_key=user_key, month=month, amount_lakhs=amount))
+        db.commit()
+        return jsonify({"success": True})
     finally:
         db.close()
 

@@ -119,6 +119,7 @@ def create_user_with_details(
     qualification: str = "", joining_date: str = "", subjects: str = "",
     class_teacher: str = "", date_of_birth: str = "", address: str = "",
     emergency_contact: str = "", manager_email: str = "",
+    must_change_password: int = 0,
 ) -> dict:
     email_norm = email.strip().lower()
     pw_hash = generate_password_hash(password)
@@ -144,6 +145,7 @@ def create_user_with_details(
             address=address,
             emergency_contact=emergency_contact,
             manager_email=manager_email,
+            must_change_password=must_change_password,
             created_at=now,
         )
         db.add(user)
@@ -180,6 +182,7 @@ def update_user(email: str, data: dict) -> dict | None:
         "full_name", "role", "department", "employee_id", "phone",
         "qualification", "joining_date", "subjects", "class_teacher",
         "date_of_birth", "address", "emergency_contact", "manager_email",
+        "must_change_password", "status",
     }
     db = SessionLocal()
     try:

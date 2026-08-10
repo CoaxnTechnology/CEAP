@@ -41,9 +41,12 @@ def create_app():
     from app.modules.finance.routes import finance_bp
     from app.modules.hr.routes import hr_bp
     from app.modules.knowledge.routes import knowledge_bp
+    from app.modules.meetings.routes import meetings_bp
     from app.modules.onboarding.routes import onboarding_bp
     from app.modules.operations.routes import ops_bp
+    from app.modules.settings.routes import settings_bp
     from app.modules.students.routes import students_bp
+    from app.modules.workflows.routes import workflow_bp
 
     app.register_blueprint(auth_bp)
     app.register_blueprint(files_bp)
@@ -53,6 +56,7 @@ def create_app():
     app.register_blueprint(studio_bp)
     app.register_blueprint(onboarding_bp)
     app.register_blueprint(knowledge_bp)
+    app.register_blueprint(meetings_bp)
     app.register_blueprint(compliance_bp)
     app.register_blueprint(hr_bp)
     app.register_blueprint(finance_bp)
@@ -62,6 +66,8 @@ def create_app():
     app.register_blueprint(academic_bp)
     app.register_blueprint(executive_bp)
     app.register_blueprint(ops_bp)
+    app.register_blueprint(workflow_bp)
+    app.register_blueprint(settings_bp)
 
     with app.app_context():
         init_sqlalchemy_db()
@@ -91,6 +97,10 @@ def create_app():
         seed_executive_if_empty()
         from app.modules.operations.routes import seed_tasks_if_empty
         seed_tasks_if_empty()
+        from app.modules.workflows.routes import seed_workflows_if_empty
+        seed_workflows_if_empty()
+        from app.modules.meetings.routes import seed_meetings_if_empty
+        seed_meetings_if_empty()
 
     csrf.init_app(app)
     csrf.exempt(auth_bp)
@@ -101,6 +111,7 @@ def create_app():
     csrf.exempt(studio_bp)
     csrf.exempt(onboarding_bp)
     csrf.exempt(knowledge_bp)
+    csrf.exempt(meetings_bp)
     csrf.exempt(compliance_bp)
     csrf.exempt(hr_bp)
     csrf.exempt(finance_bp)
@@ -110,6 +121,7 @@ def create_app():
     csrf.exempt(academic_bp)
     csrf.exempt(executive_bp)
     csrf.exempt(ops_bp)
+    csrf.exempt(workflow_bp)
 
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     logs_dir = os.path.join(os.path.dirname(base_dir), "logs")

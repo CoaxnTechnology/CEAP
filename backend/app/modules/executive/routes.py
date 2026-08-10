@@ -15,10 +15,9 @@ from app.models import (
     User,
 )
 from app.services.gemini import generate_briefing, generate_recommendations
+from app.modules.settings.routes import get_targets
 
 executive_bp = Blueprint("executive", __name__)
-
-MTD_TARGET = 5200000
 
 
 def _user_key_for(email: str) -> str:
@@ -44,6 +43,10 @@ def overview():
     db = SessionLocal()
     try:
         user_key = _db_key(db)
+        targets = get_targets(db, user_key)
+        mtd_target = targets["revenue_mtd"]
+        att_target = targets["attendance"]
+        compliance_target = targets["compliance"]
 
         students = db.query(Student).filter(Student.user_key == user_key).all()
         att = round(sum(s.attendance or 0 for s in students) / len(students), 1) if students else 0
@@ -52,7 +55,7 @@ def overview():
 
         cols = db.query(MonthlyCollection).filter(MonthlyCollection.user_key == user_key).all()
         mtd = cols[-1].amount_lakhs * 100000 if cols else 0
-        vs_target = round((mtd - MTD_TARGET) / MTD_TARGET * 100)
+        vs_target = round((mtd - mtd_target) / mtd_target * 100)
 
         apps = db.query(AdmissionApplication).filter(AdmissionApplication.user_key == user_key).all()
         interview = sum(1 for a in apps if a.stage == "Interview")
@@ -82,7 +85,7 @@ def overview():
             .all()
         )
 
-        att_summary = "Attendance is strong" if att >= 90 else "Attendance is soft"
+        att_summary = "Attendance is strong" if att >= att_target else "Attendance is soft"
         fee_summary = (
             "Fee collections are on target."
             if vs_target >= 0
@@ -95,9 +98,9 @@ def overview():
         )
         context = (
             f"Attendance: {att}% (high-risk {high}, at-risk {at_risk}).\n"
-            f"Revenue MTD: ₹{mtd / 100000:.1f}L vs target ₹{MTD_TARGET / 100000:.0f}L "
+            f"Revenue MTD: ₹{mtd / 100000:.1f}L vs target ₹{mtd_target / 100000:.0f}L "
             f"({vs_target:+d}%).\n"
-            f"Compliance readiness: {readiness}%.\n"
+            f"Compliance readiness: {readiness}% (target {compliance_target}%).\n"
             f"Pending approvals: {[a.workflow_type for a in pending]}.\n"
             f"Admissions awaiting interview: {interview}.\n"
             f"High-risk students: {[f'{s.name} ({s.class_name})' for s in risk_students[:3]]}."
@@ -106,9 +109,11 @@ def overview():
         fallback_summary = f"{att_summary} at {att}%. {fee_summary} {risk_summary}"
 
         fallback_bullets = [
-            {"type": "success" if att >= 90 else "warning", "text": f"Attendance {att}% — {'above' if att >= 90 else 'below'} term average"},
+            {"type": "success" if att >= att_target else "warning", "text": f"Attendance {att}% — {'above' if att >= att_target else 'below'} target {att_target}%"},
             {"type": "warning", "text": f"₹{mtd / 100000:.1f}L collected MTD · {abs(vs_target)}% vs target"},
         ]
+        if readiness is not None and readiness < compliance_target:
+            fallback_bullets.append({"type": "alert", "text": f"Compliance readiness {readiness}% below target {compliance_target}%"})
         if high:
             fallback_bullets.append({"type": "alert", "text": f"{high} high-risk students flagged — coordinate intervention"})
         fallback_bullets.append({"type": "info", "text": f"{interview} admissions applications awaiting interview"})

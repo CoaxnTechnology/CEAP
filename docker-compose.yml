@@ -1,0 +1,30 @@
+services:
+  backend:
+    build: ./backend
+    env_file: .env
+    environment:
+      DB_URI: postgresql://${POSTGRES_USER:-documind_user}:${POSTGRES_PASSWORD:-documind_pass}@postgres:5432/${POSTGRES_DB:-documind}
+    ports:
+      - "80:8000"
+    volumes:
+      - ./frontend/dist:/app/frontend/dist
+      - ./chroma_db:/app/chroma_db
+      - ./storage:/app/backend/storage
+      - ./backend/app/storage:/app/backend/app/storage
+      - ./backend/app/uploads:/app/backend/app/uploads
+    restart: unless-stopped
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-documind}
+      POSTGRES_USER: ${POSTGRES_USER:-documind_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-documind_pass}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+
+volumes:
+  pgdata:

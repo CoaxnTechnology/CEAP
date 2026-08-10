@@ -99,6 +99,7 @@ class User(Base):
     invited_by = Column(String(255), default="")
     invited_at = Column(Float, default=None)
     status = Column(String(20), default="active")  # active, invited, disabled
+    must_change_password = Column(Integer, default=0)
     is_admin = Column(Integer, default=0)
     created_at = Column(Float, default=_ts)
 
@@ -345,6 +346,16 @@ class MonthlyCollection(Base):
     amount_lakhs = Column(Float, default=0.0)
 
 
+class SchoolTarget(Base):
+    __tablename__ = "school_targets"
+
+    user_key = Column(String(64), primary_key=True)
+    revenue_mtd = Column(Float, default=5200000)
+    attendance = Column(Float, default=90.0)
+    compliance = Column(Float, default=80.0)
+    updated_at = Column(Float, default=_ts)
+
+
 class AdmissionApplication(Base):
     __tablename__ = "admission_applications"
 
@@ -359,6 +370,7 @@ class AdmissionApplication(Base):
     parent_contact = Column(String(50), default="")
     date = Column(String(20), default="")
     student_id = Column(String(64), default="")
+    removed_at = Column(Float, nullable=True)
     created_at = Column(Float, default=_ts)
 
 
@@ -391,6 +403,7 @@ class Student(Base):
     medical_json = Column(JSON, default=dict)
     timeline_json = Column(JSON, default=list)
     documents_json = Column(JSON, default=list)
+    marks_json = Column(JSON, default=list)
     ai_summary = Column(Text, default="")
     admission_id = Column(String(64), default="")
     created_at = Column(Float, default=_ts)
@@ -750,3 +763,40 @@ class ClassAttendance(Base):
     present = Column(Integer, default=0)
     total = Column(Integer, default=0)
     recorded_at = Column(Float, default=_ts)
+
+
+class Workflow(Base):
+    __tablename__ = "workflows"
+
+    id = Column(String(64), primary_key=True, default=_uuid)
+    user_key = Column(String(64), nullable=False)
+    key = Column(String(64), default="")
+    name = Column(String(255), nullable=False)
+    color = Column(String(20), default="#1E3A5F")
+    stages_json = Column(JSON, default=list)
+    status = Column(String(20), default="draft")  # draft, published
+    created_at = Column(Float, default=_ts)
+    updated_at = Column(Float, default=_ts, onupdate=_ts)
+
+
+class WorkflowInstance(Base):
+    __tablename__ = "workflow_instances"
+
+    id = Column(String(64), primary_key=True, default=_uuid)
+    workflow_id = Column(String(64), ForeignKey("workflows.id"), nullable=False)
+    title = Column(String(255), nullable=False)
+    current_stage = Column(Integer, default=0)
+    status = Column(String(20), default="open")  # open, done, cancelled
+    created_at = Column(Float, default=_ts)
+    updated_at = Column(Float, default=_ts, onupdate=_ts)
+
+
+class Role(Base):
+    __tablename__ = "roles"
+
+    id = Column(String(64), primary_key=True, default=_uuid)
+    user_key = Column(String(64), nullable=False, index=True)
+    name = Column(String(100), nullable=False)
+    permissions = Column(JSON, default=list)
+    users = Column(Integer, default=0)
+    created_at = Column(Float, default=_ts)

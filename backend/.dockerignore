@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+tests/
+.env
+chroma_db/
+storage/
+flask_session/
+logs/
+.ruff_cache/

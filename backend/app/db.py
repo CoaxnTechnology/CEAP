@@ -36,6 +36,7 @@ _STUDENT_COLUMNS = [
     ("medical_json", "JSONB DEFAULT '{}'::jsonb NOT NULL"),
     ("timeline_json", "JSONB DEFAULT '[]'::jsonb NOT NULL"),
     ("documents_json", "JSONB DEFAULT '[]'::jsonb NOT NULL"),
+    ("marks_json", "JSONB DEFAULT '[]'::jsonb NOT NULL"),
 ]
 
 
@@ -46,6 +47,11 @@ _DOCUMENT_COLUMNS = [
 
 _ADMISSION_COLUMNS = [
     ("student_id", "VARCHAR(64) DEFAULT '' NOT NULL"),
+    ("removed_at", "FLOAT"),
+]
+
+_USER_COLUMNS = [
+    ("must_change_password", "INTEGER DEFAULT 0 NOT NULL"),
 ]
 
 
@@ -77,6 +83,15 @@ def _ensure_columns():
             for name, ddl in _ADMISSION_COLUMNS:
                 if name not in cols:
                     c.execute(text(f'ALTER TABLE admission_applications ADD COLUMN "{name}" {ddl}'))
+
+        user_base = c.execute(text(
+            "SELECT table_name FROM information_schema.tables WHERE table_name='users'")).scalar()
+        if user_base:
+            cols = {r[0] for r in c.execute(text(
+                "SELECT column_name FROM information_schema.columns WHERE table_name='users'"))}
+            for name, ddl in _USER_COLUMNS:
+                if name not in cols:
+                    c.execute(text(f'ALTER TABLE users ADD COLUMN "{name}" {ddl}'))
 
         c.commit()
 

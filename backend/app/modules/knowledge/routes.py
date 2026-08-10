@@ -5,7 +5,7 @@ from flask import Blueprint, request, jsonify
 from sqlalchemy import desc
 from app.auth_helpers import login_required
 from app.db import SessionLocal
-from app.models import KnowledgeCard, Document, ActivityLog, RepositoryDocument, Department
+from app.models import KnowledgeCard, Document, ActivityLog, RepositoryDocument, Department, Student
 from app.services.rag import _user_key
 
 knowledge_bp = Blueprint("knowledge", __name__)
@@ -272,6 +272,46 @@ def search_all():
                     "lastUpdated": datetime.fromtimestamp(d.updated_at).strftime("%Y-%m-%d") if d.updated_at else "",
                     "owner": d.owner_email,
                     "source": "repository",
+                })
+
+        if q:
+            like = f"%{q}%"
+            students = db.query(Student).filter(
+                Student.user_key == user_key,
+                Student.name.ilike(like),
+            ).order_by(Student.class_name, Student.name).limit(10).all()
+            for st in students:
+                results.append({
+                    "id": st.id,
+                    "title": st.name,
+                    "snippet": f"Grade {st.class_name} · {st.house or ''} house · Attendance {st.attendance}% · GPA {st.gpa}",
+                    "status": "Missing" if st.risk_level == "High" else "Expiring" if st.risk_level == "Medium" else "Current",
+                    "department": st.class_name,
+                    "type": "Student",
+                    "year": "",
+                    "citation": "",
+                    "lastUpdated": "",
+                    "owner": st.parent_name,
+                    "source": "student",
+                })
+
+            cards = db.query(KnowledgeCard).filter(
+                KnowledgeCard.user_key == user_key,
+                KnowledgeCard.title.ilike(like),
+            ).order_by(KnowledgeCard.title).limit(10).all()
+            for c in cards:
+                results.append({
+                    "id": c.id,
+                    "title": c.title,
+                    "snippet": c.summary or "",
+                    "status": c.status or "Current",
+                    "department": c.dept or "",
+                    "type": c.card_type,
+                    "year": "",
+                    "citation": "",
+                    "lastUpdated": c.updated_at or "",
+                    "owner": "",
+                    "source": "knowledge",
                 })
 
         return jsonify({"results": results, "total": len(results)})

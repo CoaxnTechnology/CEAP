@@ -21,7 +21,7 @@ from app.models import Document
 from app.services.rag import get_store, get_registry, _user_key
 from app.services.gemini import GeminiServiceError, generate_answer, generate_answer_stream, generate_followup_suggestions, generate_answer_with_tools
 from app.services.vector_store import EmbeddingServiceError
-from app.services.tools import ALL_TOOLS
+from app.services.tools import tools_for_context
 
 chat_bp = Blueprint("chat", __name__)
 
@@ -85,9 +85,9 @@ def _fallback_response(top_chunks: list, registry: dict, label: str) -> dict:
     return {
         "response": (
             f"{label}\n\n"
-            f"I found a matching document but can't process it right now due to API limits. "
+            f"I found a matching document but couldn't generate a full answer. "
             f"**Preview:** _{first_line}_\n\n"
-            f"Please try again later or check the document directly in your files."
+            f"Try again shortly or check the document directly in your files."
         ),
         "sources": source_payload,
         "chunks_used": len(top_chunks),
@@ -188,6 +188,7 @@ def api_chat():
     if session_id and not chat_session:
         return jsonify({"error": "Session not found"}), 404
 
+    t0 = time.time()
     store    = get_store()
     registry = get_registry()
     indexed_file_ids = store.indexed_file_ids()
@@ -232,45 +233,48 @@ def api_chat():
 
     tool_calls = []
     text = ""
+    tool_defs = tools_for_context(department, agent_scope)
 
     try:
+        doc_context = ""
+        if top_chunks:
+            doc_context = (
+                "RELEVANT DOCUMENTS (use these as your primary source of truth):\n"
+                f"{context}\n\n"
+            )
+
         result = generate_answer_with_tools(
             system_prompt=system_prompt,
-            user_message=f"{history_block}\n\nUser question: {question}",
-            tool_defs=ALL_TOOLS,
+            user_message=f"{doc_context}{history_block}\n\nUser question: {question}",
+            tool_defs=tool_defs,
             history=history_for_tools,
         )
         tool_calls = result.get("tool_calls", [])
         text = result.get("text", "")
 
         if tool_calls:
-            for tc in tool_calls:
-                answer_text = tc["result"].get("data", {}).get("message", json.dumps(tc["result"]))
-                text = answer_text
-
-        if not tool_calls and not text and top_chunks:
-            doc_prompt = f"""{history_block}
-
-RELEVANT DOCUMENTS:
-{context}
-
-INSTRUCTIONS:
-- Answer using ONLY the document excerpts above.
-- Be concise and accurate. Cite the source filename when relevant.
-- If the answer is not in the documents, say so clearly.
-
-User: {question}"""
-            doc_result = generate_answer_with_tools(
-                system_prompt="You are CEAP for Schools, an expert school document analyst AI.",
-                user_message=doc_prompt,
-                tool_defs=ALL_TOOLS,
+            tool_summary = "\n".join(
+                f"- {tc['name']}({json.dumps(tc.get('args', {}))}) -> "
+                f"{json.dumps(tc['result'].get('data', tc['result']))[:600]}"
+                for tc in tool_calls
+            )
+            synthesis = generate_answer_with_tools(
+                system_prompt=(
+                    "You are CEAP for Schools. Answer the user's question using the "
+                    "tool results and documents provided. Be concise and cite the "
+                    "source filename when relevant."
+                ),
+                user_message=(
+                    f"{doc_context}"
+                    f"TOOL RESULTS:\n{tool_summary}\n\n"
+                    f"User question: {question}\n\n"
+                    "Answer based on the tool results and documents above. "
+                    "If they don't answer the question, say so clearly."
+                ),
+                tool_defs=[],
                 history=history_for_tools,
             )
-            tool_calls = doc_result.get("tool_calls", [])
-            text = doc_result.get("text", "")
-            if tool_calls:
-                for tc in tool_calls:
-                    text = tc["result"].get("data", {}).get("message", json.dumps(tc["result"]))
+            text = synthesis.get("text") or tool_summary
 
     except GeminiServiceError as exc:
         if top_chunks:
@@ -302,6 +306,7 @@ User: {question}"""
         "sources": _build_source_payload(top_chunks, registry) if top_chunks else [],
         "chunks_used": len(top_chunks) if top_chunks else 0,
         "timestamp": time.time(),
+        "elapsed_ms": int((time.time() - t0) * 1000),
         "tool_calls": tool_calls if tool_calls else [],
     }
 
@@ -314,7 +319,7 @@ User: {question}"""
     response_payload["session_id"] = chat_session["session_id"]
     response_payload["message_id"] = assistant_msg_id
 
-    if text:
+    if text and data.get("want_suggestions", True):
         try:
             response_payload["suggestions"] = generate_followup_suggestions(question, text)
         except Exception:
@@ -428,7 +433,7 @@ ANSWER:"""
                 if not saw_first_token:
                     saw_first_token = True
                 full_response.append(token)
-                yield f"event: token\ndata: {token}\n\n"
+                yield f"event: token\ndata: {json.dumps(token)}\n\n"
 
             if not saw_first_token:
                 yield f"event: done\ndata: {json.dumps({'response': '', 'sources': source_payload, 'chunks_used': len(top_chunks), 'session_id': sid})}\n\n"
@@ -453,7 +458,7 @@ ANSWER:"""
         except GeminiServiceError:
             fallback = _fallback_response(
                 top_chunks, registry,
-                "[Gemini temporarily unavailable. Showing the top retrieved passage instead.]"
+                "[AI temporarily unavailable. Showing the top retrieved passage instead.]"
             )
             yield f"event: done\ndata: {json.dumps({**fallback, 'session_id': sid})}\n\n"
         except Exception as exc:

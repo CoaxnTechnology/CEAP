@@ -9,7 +9,11 @@ from groq import APIConnectionError, APIError, APIStatusError
 from app.config import GroqConfig
 
 _client = (
-    groq.Groq(api_key=GroqConfig.API_KEY) if GroqConfig.API_KEY else None
+    groq.Groq(
+        api_key=GroqConfig.API_KEY,
+        timeout=25.0,
+        max_retries=0,
+    ) if GroqConfig.API_KEY else None
 )
 
 _RETRYABLE_STATUS_CODES = {503, 500, 429}

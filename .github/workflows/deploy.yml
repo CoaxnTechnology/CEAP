@@ -1,0 +1,56 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Set up SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.SSH_PRIVATE_KEY }}
+
+      - name: Add host to known_hosts
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -p ${{ secrets.RSYNC_PORT || '22' }} ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
+
+      - name: Sync frontend build
+        run: |
+          rsync -az --delete -e "ssh -p ${{ secrets.RSYNC_PORT || '22' }}" \
+            frontend/dist/ ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/opt/documind/frontend/dist/
+
+      - name: Sync backend + config
+        run: |
+          rsync -az --delete -e "ssh -p ${{ secrets.RSYNC_PORT || '22' }}" \
+            backend/Dockerfile backend/requirements.txt backend/run.py backend/app docker-compose.yml \
+            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/opt/documind/
+
+      - name: Write environment
+        run: |
+          echo '${{ secrets.ENV_FILE }}' | ssh -p ${{ secrets.RSYNC_PORT || '22' }} ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+            'cat > /opt/documind/.env && chmod 600 /opt/documind/.env'
+
+      - name: Rebuild and restart
+        run: |
+          ssh -p ${{ secrets.RSYNC_PORT || '22' }} ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+            'cd /opt/documind && docker compose up -d --build backend'

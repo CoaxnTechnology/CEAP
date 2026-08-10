@@ -1,10 +1,13 @@
 import os
+import secrets
 from pathlib import Path
 from flask import Blueprint, request, jsonify, session, redirect, url_for, send_from_directory
 from werkzeug.security import check_password_hash
 from flask_wtf.csrf import generate_csrf
 from app.auth_helpers import login_required
 from app.config import AuthConfig
+from app.db import SessionLocal
+from app.models import Role
 from app.services.persistence import (
     create_user, get_user_by_email, update_user_role, get_dashboard_stats,
     list_users, create_user_with_details, update_user, delete_user,
@@ -12,6 +15,14 @@ from app.services.persistence import (
 from app.services.rag import cleanup_user_store
 
 auth_bp = Blueprint("auth", __name__)
+
+DEFAULT_ROLES = [
+    ("Principal", "Full access", 1),
+    ("HOD", "Dept knowledge + generate", 4),
+    ("Teacher", "Search + AI Chat", 28),
+    ("Admin Staff", "Compliance + connectors", 6),
+    ("Viewer", "Read-only search", 12),
+]
 
 # routes.py → backend/app/modules/admin/routes.py → project root = parents[4]
 _PROJECT_ROOT = Path(__file__).parents[4]
@@ -63,7 +74,12 @@ def api_login():
         session["username"] = email.split("@")[0]
         session["role"] = user.get("role", "user")
         session.pop("user_key", None)
-        return jsonify({"success": True, "username": session["username"], "role": session["role"]})
+        return jsonify({
+            "success": True,
+            "username": session["username"],
+            "role": session["role"],
+            "must_change_password": bool(user.get("must_change_password")),
+        })
 
     if email in AuthConfig.USERS and AuthConfig.USERS[email] == password:
         create_user(email, password)
@@ -75,9 +91,32 @@ def api_login():
         session["username"] = email.split("@")[0]
         session["role"] = user.get("role", "user")
         session.pop("user_key", None)
-        return jsonify({"success": True, "username": session["username"], "role": session["role"]})
+        return jsonify({
+            "success": True,
+            "username": session["username"],
+            "role": session["role"],
+            "must_change_password": bool(user.get("must_change_password")),
+        })
 
     return jsonify({"success": False, "error": "Invalid credentials"}), 401
+
+
+@auth_bp.route("/api/me/password", methods=["POST"])
+@login_required
+def api_change_own_password():
+    data = request.json or {}
+    current_pw = data.get("current_password", "")
+    new_pw = data.get("new_password", "")
+    if not new_pw or len(new_pw) < 4:
+        return jsonify({"error": "New password must be at least 4 characters"}), 400
+    email = session.get("user")
+    user = get_user_by_email(email)
+    if user and not check_password_hash(user["password_hash"], current_pw):
+        return jsonify({"error": "Current password is incorrect"}), 400
+    result = update_user(email, {"password": new_pw, "must_change_password": 0})
+    if not result:
+        return jsonify({"error": "User not found"}), 404
+    return jsonify({"success": True, "must_change_password": False})
 
 
 @auth_bp.route("/dashboard")
@@ -125,9 +164,14 @@ def api_list_staff():
 def api_create_staff():
     data = request.json or {}
     email = data.get("email", "").strip().lower()
+    invite = bool(data.get("invite"))
     password = data.get("password", "")
-    if not email or not password:
+    if not email:
         return jsonify({"error": "Email and password are required"}), 400
+    if not invite and not password:
+        return jsonify({"error": "Email and password are required"}), 400
+    if invite and not password:
+        password = secrets.token_urlsafe(10)
     result = create_user_with_details(
         email=email,
         password=password,
@@ -144,9 +188,12 @@ def api_create_staff():
         address=data.get("address", ""),
         emergency_contact=data.get("emergency_contact", ""),
         manager_email=data.get("manager_email", ""),
+        must_change_password=1 if invite else 0,
     )
     if "error" in result:
         return jsonify(result), 409
+    if invite:
+        result["temp_password"] = password
     return jsonify(result), 201
 
 
@@ -192,6 +239,88 @@ def api_dashboard_stats():
     email = session.get("user", "")
     stats = get_dashboard_stats(email)
     return jsonify(stats)
+
+
+@auth_bp.route("/api/roles", methods=["GET"])
+@login_required
+def api_list_roles():
+    from app.services.rag import _user_key
+
+    db = SessionLocal()
+    try:
+        user_key = _user_key()
+        roles = db.query(Role).filter(Role.user_key == user_key).order_by(Role.created_at).all()
+        if not roles:
+            for i, (name, permissions, users) in enumerate(DEFAULT_ROLES):
+                db.add(Role(user_key=user_key, name=name, permissions=permissions, users=users))
+            db.commit()
+            roles = db.query(Role).filter(Role.user_key == user_key).order_by(Role.created_at).all()
+        return jsonify([
+            {"id": r.id, "name": r.name, "permissions": r.permissions, "users": r.users}
+            for r in roles
+        ])
+    finally:
+        db.close()
+
+
+@auth_bp.route("/api/roles", methods=["POST"])
+@login_required
+def api_create_role():
+    from app.services.rag import _user_key
+
+    data = request.get_json(silent=True) or {}
+    name = (data.get("name") or "").strip()
+    if not name:
+        return jsonify({"error": "Role name is required"}), 400
+    db = SessionLocal()
+    try:
+        user_key = _user_key()
+        if db.query(Role).filter(Role.user_key == user_key, Role.name == name).first():
+            return jsonify({"error": "Role name already exists"}), 409
+        role = Role(user_key=user_key, name=name, permissions=data.get("permissions", ""), users=int(data.get("users") or 0))
+        db.add(role)
+        db.commit()
+        return jsonify({"id": role.id, "name": role.name, "permissions": role.permissions, "users": role.users}), 201
+    finally:
+        db.close()
+
+
+@auth_bp.route("/api/roles/<role_id>", methods=["PUT"])
+@login_required
+def api_update_role(role_id):
+    from app.services.rag import _user_key
+
+    data = request.get_json(silent=True) or {}
+    db = SessionLocal()
+    try:
+        role = db.query(Role).filter(Role.user_key == _user_key(), Role.id == role_id).first()
+        if not role:
+            return jsonify({"error": "Role not found"}), 404
+        if "name" in data:
+            role.name = data["name"]
+        if "permissions" in data:
+            role.permissions = data["permissions"]
+        db.commit()
+        return jsonify({"id": role.id, "name": role.name, "permissions": role.permissions, "users": role.users})
+    finally:
+        db.close()
+
+
+@auth_bp.route("/api/roles/<role_id>", methods=["DELETE"])
+@login_required
+def api_delete_role(role_id):
+    from app.services.rag import _user_key
+
+    db = SessionLocal()
+    try:
+        role = db.query(Role).filter(Role.user_key == _user_key(), Role.id == role_id).first()
+        if not role:
+            return jsonify({"error": "Role not found"}), 404
+        db.delete(role)
+        db.commit()
+        return jsonify({"success": True})
+    finally:
+        db.close()
 
 
 @auth_bp.route("/<path:path>")

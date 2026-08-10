@@ -739,3 +739,26 @@ SCHOOL_TOOLS = [
 
 ALL_TOOLS = HR_TOOLS + HR_TOOLS_EXTRA + ACCOUNTING_TOOLS + ACCOUNTING_TOOLS_EXTRA + ADMIN_TOOLS + ADMIN_TOOLS_EXTRA + SCHOOL_TOOLS
 TOOL_NAME_MAP = {t["name"]: t for t in ALL_TOOLS}
+
+# Map a department / agent context to a smaller tool set instead of sending
+# all 44 schemas on every LLM call. Unmapped contexts fall back to ALL_TOOLS.
+_TOOL_GROUPS = {
+    "hr": HR_TOOLS + HR_TOOLS_EXTRA,
+    "finance": ACCOUNTING_TOOLS + ACCOUNTING_TOOLS_EXTRA,
+    "accounting": ACCOUNTING_TOOLS + ACCOUNTING_TOOLS_EXTRA,
+    "admin": ADMIN_TOOLS + ADMIN_TOOLS_EXTRA,
+    "academic": SCHOOL_TOOLS + HR_TOOLS + HR_TOOLS_EXTRA,
+    "executive": SCHOOL_TOOLS + ACCOUNTING_TOOLS,
+    "students": SCHOOL_TOOLS,
+    "admissions": SCHOOL_TOOLS,
+    "compliance": ADMIN_TOOLS,
+    "knowledge": [],
+}
+
+
+def tools_for_context(department: str = "", agent_scope: str = "") -> list:
+    text = f"{department or ''} {agent_scope or ''}".lower()
+    for key, tools in _TOOL_GROUPS.items():
+        if key in text:
+            return tools
+    return ALL_TOOLS

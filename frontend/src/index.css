@@ -1,0 +1,220 @@
+@import "tailwindcss";
+
+/* Class-based dark mode (default in Tailwind v4 is prefers-color-scheme) */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-navy-50: #f0f4f8;
+  --color-navy-100: #d9e2ec;
+  --color-navy-200: #bcccdc;
+  --color-navy-300: #9fb3c8;
+  --color-navy-400: #829ab1;
+  --color-navy-500: #627d98;
+  --color-navy-600: #486581;
+  --color-navy-700: #334e68;
+  --color-navy-800: #243b53;
+  --color-navy-900: #1e3a5f;
+  --color-navy-950: #102a43;
+  --color-success-50: #ecfdf5;
+  --color-success-100: #d1fae5;
+  --color-success-500: #10b981;
+  --color-success-600: #059669;
+  --color-success-700: #047857;
+  --color-warning-50: #fffbeb;
+  --color-warning-100: #fef3c7;
+  --color-warning-500: #f59e0b;
+  --color-warning-600: #d97706;
+  --color-danger-50: #fef2f2;
+  --color-danger-100: #fee2e2;
+  --color-danger-500: #ef4444;
+  --color-danger-600: #dc2626;
+  --color-violet-50: #f5f3ff;
+  --color-violet-100: #ede9fe;
+  --color-violet-500: #8b5cf6;
+  --color-violet-600: #7c3aed;
+  --color-violet-700: #6d28d9;
+  --color-surface: #f6f7fb;
+  --color-ink: #0f172a;
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  background: var(--color-surface);
+  color: var(--color-ink);
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* Premium surfaces */
+.glass {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(12px);
+}
+
+.card-hover {
+  transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+}
+.card-hover:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 8px 24px -8px rgba(30, 58, 95, 0.15);
+}
+
+.citation-mark {
+  background-color: #dbeafe;
+  color: #1e40af;
+  border-radius: 3px;
+  padding: 0 3px;
+  font-weight: 500;
+  cursor: pointer;
+  border-bottom: 1px solid #93c5fd;
+}
+
+/* Soft entrance */
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fade-up {
+  animation: fade-up 0.35s ease both;
+}
+
+@keyframes pulse-soft {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
+}
+.animate-pulse-soft {
+  animation: pulse-soft 2s ease-in-out infinite;
+}
+
+/* Dark mode basics */
+.dark body,
+html.dark body {
+  background: #0b1220;
+  color: #e2e8f0;
+}
+html.dark .glass {
+  background: rgba(15, 23, 42, 0.85);
+}
+
+/* Dark mode surface/text/border overrides for the light-first utility classes */
+html.dark .bg-white { background-color: #0f172a !important; }
+html.dark .bg-slate-50 { background-color: #1e293b !important; }
+html.dark .bg-slate-50\/50 { background-color: #1e293b !important; }
+html.dark .bg-slate-50\/60 { background-color: #1e293b !important; }
+html.dark .bg-slate-50\/80 { background-color: #1e293b !important; }
+html.dark .bg-slate-100 { background-color: #2b3648 !important; }
+html.dark .bg-slate-100\/80 { background-color: #2b3648 !important; }
+html.dark .bg-slate-200 { background-color: #334155 !important; }
+html.dark .bg-navy-50 { background-color: #16283f !important; }
+html.dark .bg-navy-100 { background-color: #1d3554 !important; }
+
+html.dark .text-slate-900 { color: #f1f5f9 !important; }
+html.dark .text-slate-800 { color: #e2e8f0 !important; }
+html.dark .text-slate-700 { color: #cbd5e1 !important; }
+html.dark .text-slate-600 { color: #94a3b8 !important; }
+html.dark .text-slate-500 { color: #94a3b8 !important; }
+html.dark .text-slate-400 { color: #64748b !important; }
+html.dark .text-ink { color: #e2e8f0 !important; }
+
+html.dark .border-slate-200 { border-color: #334155 !important; }
+html.dark .border-slate-200\/80 { border-color: #334155 !important; }
+html.dark .border-slate-100 { border-color: #2b3648 !important; }
+html.dark .border-slate-300 { border-color: #475569 !important; }
+html.dark .divide-slate-50 > :not([hidden]) ~ :not([hidden]) { border-color: #2b3648 !important; }
+html.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]) { border-color: #2b3648 !important; }
+html.dark .ring-slate-100 { --tw-ring-color: #2b3648 !important; }
+
+/* Pseudo-state (hover/focus) backgrounds for header, menu items, search */
+html.dark .bg-white\/80 { background-color: rgba(15, 23, 42, 0.85) !important; }
+html.dark .bg-white\/90 { background-color: rgba(15, 23, 42, 0.85) !important; }
+html.dark .hover\:bg-slate-100:hover { background-color: #2b3648 !important; }
+html.dark .hover\:bg-slate-50:hover { background-color: #1e293b !important; }
+html.dark .hover\:bg-slate-50\/80:hover { background-color: #1e293b !important; }
+html.dark .hover\:bg-white:hover { background-color: #1e293b !important; }
+html.dark .hover\:bg-white\/10:hover { background-color: rgba(255, 255, 255, 0.1) !important; }
+html.dark .hover\:bg-navy-50:hover { background-color: #16283f !important; }
+html.dark .hover\:bg-navy-100:hover { background-color: #1d3554 !important; }
+html.dark .focus\:bg-white:focus { background-color: #1e293b !important; }
+html.dark .focus\:bg-slate-50:focus { background-color: #1e293b !important; }
+
+/* InsightBanner gradient cards (from-violet-50 via-white to-navy-50) */
+html.dark .from-violet-50 { --tw-gradient-from: #241d3a !important; }
+html.dark .via-white { --tw-gradient-via: #0f172a !important; }
+html.dark .to-navy-50 { --tw-gradient-to: #16283f !important; }
+html.dark .border-violet-100 { border-color: #3b2a63 !important; }
+
+/* Form field utility */
+@layer components {
+  .field {
+    width: 100%;
+    border-radius: 0.625rem;
+    border: 1px solid #e2e8f0;
+    background: #f8fafc;
+    color: var(--color-ink);
+    padding: 0.55rem 0.75rem;
+    font-size: 0.875rem;
+    outline: none;
+    transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
+  }
+  .field::placeholder {
+    color: #94a3b8;
+  }
+  .field:focus {
+    border-color: #627d98;
+    background: #fff;
+    box-shadow: 0 0 0 3px #d9e2ec;
+  }
+  html.dark .field {
+    background: #1e293b;
+    border-color: #334155;
+    color: #e2e8f0;
+  }
+  html.dark .field:focus {
+    background: #0f172a;
+    border-color: #627d98;
+  }
+}
+
+/* Workflow canvas grid */
+.wf-grid {
+  background-image: radial-gradient(circle, #cbd5e1 1px, transparent 1px);
+  background-size: 20px 20px;
+}

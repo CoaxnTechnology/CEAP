@@ -110,6 +110,24 @@ def update_event(event_id):
         db.close()
 
 
+@calendar_bp.route("/api/calendar/<event_id>", methods=["DELETE"])
+@login_required
+def delete_event(event_id):
+    db = SessionLocal()
+    try:
+        user_key = _db_key(db)
+        ev = db.query(CalendarEvent).filter(
+            CalendarEvent.id == event_id, CalendarEvent.user_key == user_key
+        ).first()
+        if not ev:
+            return jsonify({"error": "Event not found"}), 404
+        db.delete(ev)
+        db.commit()
+        return jsonify({"success": True})
+    finally:
+        db.close()
+
+
 SEED_EVENTS = [
     {"title": "Leadership standup", "date": "2025-07-28", "time": "09:00", "type": "Meeting", "status": "Upcoming"},
     {"title": "Compliance Evidence Sync", "date": "2025-07-28", "time": "14:00", "type": "Compliance", "status": "In Progress"},
