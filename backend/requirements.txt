@@ -5,6 +5,9 @@ flask-wtf>=1.2
 flask-cors>=5.0
 python-dotenv>=1.0
 
+# WSGI server (container entrypoint)
+gunicorn>=21.2
+
 # AI
 groq>=0.9
 

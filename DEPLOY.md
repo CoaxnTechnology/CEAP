@@ -14,21 +14,21 @@ sudo usermod -aG docker $USER
 ## 2. First-time server layout
 
 ```bash
-sudo mkdir -p /opt/documind/frontend/dist /opt/documind/storage
-sudo chown -R $USER:$USER /opt/documind
+sudo mkdir -p /opt/CEAP/frontend/dist /opt/CEAP/storage
+sudo chown -R $USER:$USER /opt/CEAP
 ```
 
 Clone once so the runtime dirs exist (or let the first deploy create them):
 
 ```bash
-cd /opt/documind
+cd /opt/CEAP
 git clone git@github.com:CoaxnTechnology/Documind.git repo
 ```
 
-Create the environment file (never commit it):
+Create the environment file (never commit it) — **the CI/CD pipeline reads it untouched**:
 
 ```bash
-sudo nano /opt/documind/.env
+sudo nano /opt/CEAP.env
 ```
 
 `.env` contents — note the **DB host is `postgres`** (the compose service name), not `localhost`:
@@ -45,7 +45,7 @@ GEMINI_API_KEY=<your key>
 AZURE_CLIENT_ID=<optional>
 AZURE_CLIENT_SECRET=<optional>
 AZURE_TENANT_ID=common
-AZURE_REDIRECT_URI=http://<VPS_IP>/auth/callback
+AZURE_REDIRECT_URI=https://ceap.coaxn.com/auth/callback
 CHROMA_PATH=/app/chroma_db
 ```
 
@@ -59,27 +59,27 @@ In your repo: **Settings → Secrets and variables → Actions → New repositor
 | `VPS_USER` | SSH user (e.g. `ubuntu` or `root`) |
 | `SSH_PRIVATE_KEY` | Private key that can log into the VPS |
 | `RSYNC_PORT` | SSH port (defaults to 22) |
-| `ENV_FILE` | Full contents of the `.env` file above (a single value) |
+
+`/opt/CEAP.env` is **managed manually on the server** — CI/CD never overwrites it. The workflow passes it via `docker compose --env-file /opt/CEAP.env`.
 
 ## 4. Deploy
 
 Every push to `main` (or manual run via **Actions → Deploy → Run workflow**) will:
 
 1. Build the frontend in CI
-2. rsync `frontend/dist` → `/opt/documind/frontend/dist`
-3. rsync backend source → `/opt/documind/`
-4. Write `.env`
-5. `docker compose up -d --build backend`
+2. rsync `frontend/dist` → `/opt/CEAP/frontend/dist`
+3. rsync backend source + compose → `/opt/CEAP/`
+4. `docker compose --env-file /opt/CEAP.env up -d --build backend` (env untouched)
 
 Manual first deploy:
 
 ```bash
-cd /opt/documind
-docker compose up -d --build
+cd /opt/CEAP
+docker compose --env-file /opt/CEAP.env up -d --build
 docker compose logs -f backend   # watch startup
 ```
 
-The app is served on **port 80** at `http://<VPS_IP>/`.
+The app is served at `https://ceap.coaxn.com/` via nginx → `127.0.0.1:8010` (compose binds the backend on loopback only).
 
 ## 5. Updating
 

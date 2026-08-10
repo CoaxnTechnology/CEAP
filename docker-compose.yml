@@ -5,7 +5,7 @@ services:
     environment:
       DB_URI: postgresql://${POSTGRES_USER:-documind_user}:${POSTGRES_PASSWORD:-documind_pass}@postgres:5432/${POSTGRES_DB:-documind}
     ports:
-      - "80:8000"
+      - "127.0.0.1:8010:8000"
     volumes:
       - ./frontend/dist:/app/frontend/dist
       - ./chroma_db:/app/chroma_db

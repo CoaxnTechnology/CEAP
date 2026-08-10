@@ -37,20 +37,15 @@ jobs:
       - name: Sync frontend build
         run: |
           rsync -az --delete -e "ssh -p ${{ secrets.RSYNC_PORT || '22' }}" \
-            frontend/dist/ ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/opt/documind/frontend/dist/
+            frontend/dist/ ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/opt/CEAP/frontend/dist/
 
       - name: Sync backend + config
         run: |
-          rsync -az --delete -e "ssh -p ${{ secrets.RSYNC_PORT || '22' }}" \
+          rsync -az -e "ssh -p ${{ secrets.RSYNC_PORT || '22' }}" \
             backend/Dockerfile backend/requirements.txt backend/run.py backend/app docker-compose.yml \
-            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/opt/documind/
-
-      - name: Write environment
-        run: |
-          echo '${{ secrets.ENV_FILE }}' | ssh -p ${{ secrets.RSYNC_PORT || '22' }} ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
-            'cat > /opt/documind/.env && chmod 600 /opt/documind/.env'
+            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:/opt/CEAP/
 
       - name: Rebuild and restart
         run: |
           ssh -p ${{ secrets.RSYNC_PORT || '22' }} ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
-            'cd /opt/documind && docker compose up -d --build backend'
+            'cd /opt/CEAP && docker compose --env-file /opt/CEAP.env up -d --build backend'
