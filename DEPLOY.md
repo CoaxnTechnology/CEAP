@@ -28,7 +28,7 @@ git clone git@github.com:CoaxnTechnology/Documind.git repo
 Create the environment file (never commit it) — **the CI/CD pipeline reads it untouched**:
 
 ```bash
-sudo nano /opt/CEAP.env
+sudo nano /opt/CEAP/.env
 ```
 
 `.env` contents — note the **DB host is `postgres`** (the compose service name), not `localhost`:
@@ -60,7 +60,7 @@ In your repo: **Settings → Secrets and variables → Actions → New repositor
 | `SSH_PRIVATE_KEY` | Private key that can log into the VPS |
 | `RSYNC_PORT` | SSH port (defaults to 22) |
 
-`/opt/CEAP.env` is **managed manually on the server** — CI/CD never overwrites it. The workflow passes it via `docker compose --env-file /opt/CEAP.env`.
+`/opt/CEAP/.env` is **managed manually on the server** — CI/CD never overwrites it. Compose loads it automatically via `env_file: .env`.
 
 ## 4. Deploy
 
@@ -69,13 +69,13 @@ Every push to `main` (or manual run via **Actions → Deploy → Run workflow**)
 1. Build the frontend in CI
 2. rsync `frontend/dist` → `/opt/CEAP/frontend/dist`
 3. rsync backend source + compose → `/opt/CEAP/`
-4. `docker compose --env-file /opt/CEAP.env up -d --build backend` (env untouched)
+4. `docker compose up -d --build backend` (env untouched)
 
 Manual first deploy:
 
 ```bash
 cd /opt/CEAP
-docker compose --env-file /opt/CEAP.env up -d --build
+docker compose up -d --build
 docker compose logs -f backend   # watch startup
 ```
 
