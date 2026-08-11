@@ -7,10 +7,14 @@ import Modal from '../components/ui/Modal'
 import { useApp } from '../context/AppContext'
 import { api } from '../lib/api'
 
-const PERMISSION_OPTIONS = [
-  'Full access', 'Dept knowledge + generate', 'Search + AI Chat',
-  'Compliance + connectors', 'Read-only search', 'Generate + approve', 'Admin only',
+const PANELS = [
+  'Executive', 'Academic', 'Students', 'Admissions', 'Finance', 'HR',
+  'Compliance', 'Knowledge', 'AI Studio', 'Admin',
+  'Tasks', 'Approvals', 'Calendar', 'Analytics', 'Workflows',
 ]
+
+const toArray = (p) => (Array.isArray(p) ? p : p ? [p] : [])
+const toggle = (arr, item) => arr.includes(item) ? arr.filter((x) => x !== item) : [...arr, item]
 
 export default function RolesAdmin() {
   const navigate = useNavigate()
@@ -18,10 +22,10 @@ export default function RolesAdmin() {
   const [roles, setRoles] = useState([])
   const [edit, setEdit] = useState(null)
   const [addOpen, setAddOpen] = useState(false)
-  const [newRole, setNewRole] = useState({ name: '', permissions: 'Search + AI Chat', users: 0 })
+  const [newRole, setNewRole] = useState({ name: '', permissions: [], users: 0 })
 
   useEffect(() => {
-    api('/api/roles').then(setRoles).catch((e) => toast(e.message, 'warning'))
+    api('/api/roles').then((rs) => setRoles(rs.map((r) => ({ ...r, permissions: toArray(r.permissions) })))).catch((e) => toast(e.message, 'warning'))
   }, [])
 
   async function saveEdit() {
@@ -40,7 +44,7 @@ export default function RolesAdmin() {
       setRoles((prev) => [...prev, saved])
       toast(`Role "${saved.name}" created`, 'success')
       setAddOpen(false)
-      setNewRole({ name: '', permissions: 'Search + AI Chat', users: 0 })
+      setNewRole({ name: '', permissions: [], users: 0 })
     } catch (e) { toast(e.message, 'warning') }
   }
 
@@ -77,19 +81,27 @@ export default function RolesAdmin() {
             <h3 className="mt-3 text-base font-semibold text-slate-900">{r.name}</h3>
             <p className="mt-1 text-2xl font-bold text-navy-800">{r.users}</p>
             <p className="text-[11px] text-slate-400">assigned users</p>
-            <p className="mt-3 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">{r.permissions}</p>
+            <p className="mt-2 flex flex-wrap gap-1">
+              {toArray(r.permissions).length
+                ? toArray(r.permissions).map((p) => (
+                    <span key={p} className="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] text-slate-600">{p}</span>
+                  ))
+                : <span className="rounded-md bg-slate-100 px-2 py-0.5 text-[11px] text-slate-400">No panels</span>}
+            </p>
           </Card>
         ))}
       </div>
 
       <Card className="border-navy-100 bg-navy-50">
-        <p className="text-sm font-semibold text-navy-900">Permission model (prototype)</p>
+        <p className="text-sm font-semibold text-navy-900">Permission model</p>
         <ul className="mt-2 list-inside list-disc space-y-1 text-xs text-navy-800/80">
-          <li><strong>Principal</strong> — full access including publish & connectors</li>
-          <li><strong>HOD</strong> — department knowledge, generate, review within dept</li>
-          <li><strong>Teacher</strong> — search + AI chat with citations</li>
-          <li><strong>Admin Staff</strong> — compliance evidence + source connectors</li>
-          <li><strong>Viewer</strong> — read-only search</li>
+          {[
+            ['Principal', 'All workspaces — Executive, Academic, Students, Admissions, Finance, HR, Compliance, Knowledge, AI Studio, Admin, plus operations'],
+            ['HOD', 'Academic, Students, Knowledge, AI Studio — generate and review within dept'],
+            ['Teacher', 'Academic, Students, AI Studio — search + AI chat with citations'],
+            ['Admin Staff', 'Compliance, Knowledge, Finance — evidence + source connectors'],
+            ['Viewer', 'Executive, Knowledge — read-only search'],
+          ].map(([role, scope]) => <li key={role}><strong>{role}</strong> — {scope}</li>)}
         </ul>
       </Card>
 
@@ -104,11 +116,17 @@ export default function RolesAdmin() {
                 value={edit.name} onChange={(e) => setEdit((r) => ({ ...r, name: e.target.value }))} />
             </div>
             <div>
-              <label className="mb-1 block text-xs font-medium text-slate-500">Permissions</label>
-              <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-navy-400"
-                value={edit.permissions} onChange={(e) => setEdit((r) => ({ ...r, permissions: e.target.value }))}>
-                {PERMISSION_OPTIONS.map((p) => <option key={p} value={p}>{p}</option>)}
-              </select>
+              <label className="mb-1 block text-xs font-medium text-slate-500">Permitted panels</label>
+              <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+                {PANELS.map((p) => (
+                  <label key={p} className="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:border-navy-400">
+                    <input type="checkbox" className="h-4 w-4 accent-navy-700"
+                      checked={edit.permissions.includes(p)}
+                      onChange={() => setEdit((r) => ({ ...r, permissions: toggle(r.permissions, p) }))} />
+                    {p}
+                  </label>
+                ))}
+              </div>
             </div>
           </div>
         )}
@@ -124,11 +142,17 @@ export default function RolesAdmin() {
               value={newRole.name} onChange={(e) => setNewRole((r) => ({ ...r, name: e.target.value }))} placeholder="e.g. Compliance Officer" />
           </div>
           <div>
-            <label className="mb-1 block text-xs font-medium text-slate-500">Permissions</label>
-            <select className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-navy-400"
-              value={newRole.permissions} onChange={(e) => setNewRole((r) => ({ ...r, permissions: e.target.value }))}>
-              {PERMISSION_OPTIONS.map((p) => <option key={p} value={p}>{p}</option>)}
-            </select>
+            <label className="mb-1 block text-xs font-medium text-slate-500">Permitted panels</label>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+              {PANELS.map((p) => (
+                <label key={p} className="flex cursor-pointer items-center gap-2 rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-700 hover:border-navy-400">
+                  <input type="checkbox" className="h-4 w-4 accent-navy-700"
+                    checked={newRole.permissions.includes(p)}
+                    onChange={() => setNewRole((r) => ({ ...r, permissions: toggle(r.permissions, p) }))} />
+                  {p}
+                </label>
+              ))}
+            </div>
           </div>
         </div>
       </Modal>

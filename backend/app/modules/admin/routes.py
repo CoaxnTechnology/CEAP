@@ -17,11 +17,11 @@ from app.services.rag import cleanup_user_store
 auth_bp = Blueprint("auth", __name__)
 
 DEFAULT_ROLES = [
-    ("Principal", "Full access", 1),
-    ("HOD", "Dept knowledge + generate", 4),
-    ("Teacher", "Search + AI Chat", 28),
-    ("Admin Staff", "Compliance + connectors", 6),
-    ("Viewer", "Read-only search", 12),
+    ("Principal", ["Executive", "Academic", "Students", "Admissions", "Finance", "HR", "Compliance", "Knowledge", "AI Studio", "Admin", "Tasks", "Approvals", "Calendar", "Analytics", "Workflows"], 1),
+    ("HOD", ["Academic", "Students", "Knowledge", "AI Studio", "Tasks", "Calendar"], 4),
+    ("Teacher", ["Academic", "Students", "AI Studio"], 28),
+    ("Admin Staff", ["Compliance", "Knowledge", "Finance", "Tasks", "Approvals"], 6),
+    ("Viewer", ["Executive", "Knowledge"], 12),
 ]
 
 # routes.py → backend/app/modules/admin/routes.py → project root = parents[4]
@@ -277,7 +277,7 @@ def api_create_role():
         user_key = _user_key()
         if db.query(Role).filter(Role.user_key == user_key, Role.name == name).first():
             return jsonify({"error": "Role name already exists"}), 409
-        role = Role(user_key=user_key, name=name, permissions=data.get("permissions", ""), users=int(data.get("users") or 0))
+        role = Role(user_key=user_key, name=name, permissions=data.get("permissions") or [], users=int(data.get("users") or 0))
         db.add(role)
         db.commit()
         return jsonify({"id": role.id, "name": role.name, "permissions": role.permissions, "users": role.users}), 201
