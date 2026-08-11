@@ -154,16 +154,22 @@ def api_reindex():
     source_ref = entry.get("source_ref", "")
 
     # For OneDrive files, we need to re-download
-    if source == "onedrive" and source_ref:
+    if source in ("onedrive", "gdrive") and source_ref:
         from flask import session
-        from app.services.onedrive import graph_download
         from app.services.file_parser import extract_text_from_bytes
 
-        token = session.get("od_token")
+        token = session.get(("od_token" if source == "onedrive" else "gd_token"))
         if token:
             try:
-                download_url = f"https://graph.microsoft.com/v1.0/me/drive/items/{source_ref}/content"
-                raw = graph_download(download_url, token)
+                if source == "onedrive":
+                    from app.services.onedrive import graph_download
+
+                    download_url = f"https://graph.microsoft.com/v1.0/me/drive/items/{source_ref}/content"
+                    raw = graph_download(download_url, token)
+                else:
+                    from app.services.google_drive import drive_download
+
+                    raw = drive_download(source_ref, token)
                 if raw:
                     text = extract_text_from_bytes(raw, entry["name"])
                     if text:

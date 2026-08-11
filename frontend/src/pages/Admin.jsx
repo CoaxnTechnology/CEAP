@@ -61,6 +61,8 @@ export default function Admin() {
   const [filesLoading, setFilesLoading] = useState(true)
   const [odStatus, setOdStatus] = useState(null)
   const [odSyncing, setOdSyncing] = useState(false)
+  const [gdStatus, setGdStatus] = useState(null)
+  const [gdSyncing, setGdSyncing] = useState(false)
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [fileSearch, setFileSearch] = useState('')
 
@@ -88,6 +90,15 @@ export default function Admin() {
         if (s.connected) {
           setConnStatus((p) => ({ ...p, onedrive: { connected: true, lastSync: 'Just now' } }))
           if (justConnected) toast('OneDrive connected', 'success')
+        }
+      })
+      .catch(() => {})
+    api('/api/gdrive/status')
+      .then((s) => {
+        setGdStatus(s)
+        if (s.connected) {
+          setConnStatus((p) => ({ ...p, gdrive: { connected: true, lastSync: 'Just now' } }))
+          if (params.get('gd_connected') === '1') toast('Google Drive connected', 'success')
         }
       })
       .catch(() => {})
@@ -152,10 +163,10 @@ export default function Admin() {
   }
 
   function connect(c) {
-    if (c.id === 'onedrive') {
-      const s = odStatus || { enabled: false }
-      if (s.enabled) { window.location.href = `${API_BASE}/onedrive/connect?redirect=${encodeURIComponent(window.location.origin + '/admin')}`; return }
-      toast('OneDrive not configured by admin', 'warning')
+    if (c.id === 'onedrive' || c.id === 'gdrive') {
+      const s = c.id === 'onedrive' ? (odStatus || {}) : (gdStatus || {})
+      if (s.enabled) { window.location.href = `${API_BASE}/${c.id}/connect?redirect=${encodeURIComponent(window.location.origin + '/admin')}`; return }
+      toast(`${c.name} not configured by admin`, 'warning')
       return
     }
     setConnStatus((p) => ({ ...p, [c.id]: { connected: true, lastSync: nowLabel() } }))
@@ -164,44 +175,47 @@ export default function Admin() {
   }
 
   function disconnect(c) {
-    if (c.id === 'onedrive') {
-      api('/api/onedrive/disconnect', { method: 'POST' }).catch(() => {})
+    if (c.id === 'onedrive' || c.id === 'gdrive') {
+      api(`/api/${c.id}/disconnect`, { method: 'POST' }).catch(() => {})
     }
     setConnStatus((p) => ({ ...p, [c.id]: { connected: false, lastSync: null } }))
     toast(`${c.name} disconnected`, 'info')
     setManageConn(null)
   }
 
-  async function syncOne(c) {
-    if (c.id === 'onedrive') {
-      setOdSyncing(true)
-      try {
-        const s = odStatus || { connected: false }
-        if (!s.connected) { toast('Connect OneDrive first', 'warning'); return }
-
-        async function listAll(token, folderId) {
-          const data = await api(`/api/onedrive/files?folder=${folderId || 'root'}`)
-          const rfiles = data.files || []
-          const docs = []
-          for (const f of rfiles) {
-            if (f.isFolder) docs.push(...(await listAll(token, f.id)))
-            else docs.push(f)
-          }
-          return docs
+  async function syncCloud(c) {
+    const id = c.id, status = id === 'onedrive' ? odStatus : gdStatus
+    const syncing = id === 'onedrive' ? odSyncing : gdSyncing
+    if (syncing) return
+    if (id === 'onedrive') setOdSyncing(true); else setGdSyncing(true)
+    try {
+      if (!status?.connected) { toast(`Connect ${c.name} first`, 'warning'); return }
+      async function listAll(folderId) {
+        const data = await api(`/api/${id}/files?folder=${folderId || 'root'}`)
+        const rfiles = data.files || []
+        const docs = []
+        for (const f of rfiles) {
+          if (f.isFolder) docs.push(...(await listAll(f.id)))
+          else docs.push(f)
         }
+        return docs
+      }
+      const docs = await listAll('root')
+      if (!docs.length) { toast('No new files to import', 'info'); return }
+      const importData = await api(`/api/${id}/import`, {
+        method: 'POST',
+        body: JSON.stringify({ files: docs }),
+      })
+      setConnStatus((p) => ({ ...p, [id]: { ...p[id], lastSync: nowLabel() } }))
+      toast(`Imported ${importData.imported?.length || 0} files from ${c.name}`, 'success')
+      loadFiles()
+    } catch (err) { toast(`${c.name} sync failed: ` + err.message, 'error') }
+    finally { if (id === 'onedrive') setOdSyncing(false); else setGdSyncing(false) }
+  }
 
-        const docs = await listAll(s.token, 'root')
-        if (!docs.length) { toast('No new files to import', 'info'); return }
-        const importData = await api('/api/onedrive/import', {
-          method: 'POST',
-          body: JSON.stringify({ files: docs }),
-        })
-        setConnStatus((p) => ({ ...p, onedrive: { ...p.onedrive, lastSync: nowLabel() } }))
-        toast(`Imported ${importData.imported?.length || 0} files from OneDrive`, 'success')
-        loadFiles()
-      } catch (err) { toast('OneDrive sync failed: ' + err.message, 'error') }
-      finally { setOdSyncing(false) }
-      return
+  async function syncOne(c) {
+    if (c.id === 'onedrive' || c.id === 'gdrive') {
+      return syncCloud(c)
     }
     if (!connStatus[c.id]?.connected) { toast('Connect first', 'warning'); return }
     setConnStatus((p) => ({ ...p, [c.id]: { ...p[c.id], lastSync: nowLabel() } }))
@@ -261,8 +275,8 @@ export default function Admin() {
                     {connected ? 'Manage' : 'Connect'}
                   </Button>
                   {connected && (
-                    <Button size="sm" variant="ghost" onClick={() => syncOne(c)} disabled={c.id === 'onedrive' && odSyncing} title="Sync now">
-                      <RefreshCw className={`h-4 w-4 ${c.id === 'onedrive' && odSyncing ? 'animate-spin' : ''}`} />
+                    <Button size="sm" variant="ghost" onClick={() => syncOne(c)} disabled={(c.id === 'onedrive' && odSyncing) || (c.id === 'gdrive' && gdSyncing)} title="Sync now">
+                      <RefreshCw className={`h-4 w-4 ${(c.id === 'onedrive' && odSyncing) || (c.id === 'gdrive' && gdSyncing) ? 'animate-spin' : ''}`} />
                     </Button>
                   )}
                 </div>

@@ -34,6 +34,23 @@ class OneDriveConfig:
         return bool(cls.CLIENT_ID and cls.CLIENT_SECRET)
 
 
+class GoogleDriveConfig:
+    CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+    CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+    REDIRECT_URI = os.getenv(
+        "GOOGLE_REDIRECT_URI", "http://localhost:5000/gdrive/callback"
+    )
+    SCOPES = [
+        "https://www.googleapis.com/auth/drive.readonly",
+        "https://www.googleapis.com/auth/userinfo.email",
+        "https://www.googleapis.com/auth/userinfo.profile",
+    ]
+
+    @classmethod
+    def is_enabled(cls):
+        return bool(cls.CLIENT_ID and cls.CLIENT_SECRET)
+
+
 class GroqConfig:
     API_KEY = os.getenv("GROQ_API_KEY")
     MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")

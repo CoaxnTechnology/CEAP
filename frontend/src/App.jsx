@@ -9,6 +9,7 @@ import Login from './pages/auth/Login'
 import ForgotPassword from './pages/auth/ForgotPassword'
 import SetPassword from './pages/auth/SetPassword'
 import Onboarding from './pages/onboarding/Onboarding'
+import Legal from './pages/Legal'
 
 import Executive from './pages/Executive'
 import Academic from './pages/Academic'
@@ -60,6 +61,8 @@ export default function App() {
           <Route path="/login" element={<Login />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
           <Route path="/set-password" element={<SetPassword />} />
+          <Route path="/privacy" element={<Legal type="privacy" />} />
+          <Route path="/terms" element={<Legal type="terms" />} />
 
           <Route
             path="/onboarding"

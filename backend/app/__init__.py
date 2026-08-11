@@ -33,7 +33,7 @@ def create_app():
     from app.modules.ai.routes import chat_bp
     from app.modules.ai.studio_routes import studio_bp
     from app.modules.calendar.routes import calendar_bp
-    from app.modules.cloud.routes import onedrive_bp
+    from app.modules.cloud.routes import onedrive_bp, gdrive_bp
     from app.modules.compliance.routes import compliance_bp
     from app.modules.documents.repository_routes import repo_bp
     from app.modules.documents.routes import files_bp
@@ -51,6 +51,7 @@ def create_app():
     app.register_blueprint(auth_bp)
     app.register_blueprint(files_bp)
     app.register_blueprint(onedrive_bp)
+    app.register_blueprint(gdrive_bp)
     app.register_blueprint(chat_bp)
     app.register_blueprint(repo_bp)
     app.register_blueprint(studio_bp)
@@ -107,6 +108,7 @@ def create_app():
     csrf.exempt(chat_bp)
     csrf.exempt(files_bp)
     csrf.exempt(onedrive_bp)
+    csrf.exempt(gdrive_bp)
     csrf.exempt(repo_bp)
     csrf.exempt(studio_bp)
     csrf.exempt(onboarding_bp)
