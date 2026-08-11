@@ -32,7 +32,11 @@ jobs:
       - name: Add host to known_hosts
         run: |
           mkdir -p ~/.ssh
-          ssh-keyscan -p ${{ secrets.RSYNC_PORT || '22' }} ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts
+          set +e
+          ssh-keyscan -T 15 -p ${{ secrets.RSYNC_PORT || '22' }} ${{ secrets.VPS_HOST }} > ~/.ssh/known_hosts 2>/tmp/keyscan.err
+          rc=$?
+          cat /tmp/keyscan.err
+          exit $rc
 
       - name: Sync frontend build
         run: |
