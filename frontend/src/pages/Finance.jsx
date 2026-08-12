@@ -155,7 +155,6 @@ export default function Finance() {
                 <div
                   className="w-full rounded-t-lg bar-gradient"
                   style={{ height: `${(v / 55) * 100}%` }}
-                  data-debug={`${v},${(v / 55) * 100}%`}
                 />
                 <span className="text-[10px] text-slate-400">{data.trend.labels[i]}</span>
               </div>
