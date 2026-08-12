@@ -13,6 +13,7 @@ from app.services.persistence import (
     list_users, create_user_with_details, update_user, delete_user,
 )
 from app.services.rag import cleanup_user_store
+from app.services.notification_service import send_invite_email
 
 auth_bp = Blueprint("auth", __name__)
 
@@ -197,6 +198,8 @@ def api_create_staff():
         return jsonify(result), 409
     if invite:
         result["temp_password"] = password
+        send_invite_email(email, data.get("role", "user"), password)
+        result["email_sent"] = True
     return jsonify(result), 201
 
 

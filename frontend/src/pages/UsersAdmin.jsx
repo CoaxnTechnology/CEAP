@@ -65,7 +65,7 @@ export default function UsersAdmin() {
         }),
       })
       setInviteOpen(false)
-      setTempPw({ email: form.email, password: res.temp_password || '' })
+      setTempPw({ email: form.email, password: res.temp_password || '', emailSent: !!res.email_sent })
       setForm({ name: '', email: '', role: 'Teacher', department: 'Academic' })
       fetchUsers()
     } catch (e) { toast(e.message || 'Invite failed', 'error') }
@@ -203,6 +203,11 @@ export default function UsersAdmin() {
           <div className="space-y-3">
             <p className="text-sm text-slate-600">
               {tempPw.email} can sign in with this temporary password. They will be asked to set their own on first login.
+            </p>
+            <p className={`text-xs font-medium ${tempPw.emailSent ? 'text-emerald-600' : 'text-amber-600'}`}>
+              {tempPw.emailSent
+                ? `Invitation email sent to ${tempPw.email}.`
+                : 'Invitation email could not be sent — no email config. Share the password manually.'}
             </p>
             <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
               <code className="font-mono text-sm text-navy-800">{tempPw.password}</code>
