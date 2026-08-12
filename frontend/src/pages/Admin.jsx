@@ -148,7 +148,7 @@ export default function Admin() {
         method: 'POST',
         body: JSON.stringify({ file_id: fileId }),
       })
-      if (data.success) { toast('File deleted', 'info'); loadFiles() }
+      if (data.success) { toast('File deleted', 'info'); setSelectedIds((prev) => { const n = new Set(prev); n.delete(fileId); return n }); loadFiles() }
       else toast(data.error || 'Delete failed', 'error')
     } catch (err) { toast(err.message, 'error') }
   }
@@ -235,7 +235,7 @@ export default function Admin() {
       {/* Connectors */}
       <div>
         <h2 className="mb-3 text-sm font-semibold text-slate-800">Source Connectors</h2>
-        <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="grid gap-4 sm:grid-cols-2">
           {connectorList.map((c) => {
             const Icon = connectorIcons[c.id] || Cloud
             const connected = c.status === 'Connected'

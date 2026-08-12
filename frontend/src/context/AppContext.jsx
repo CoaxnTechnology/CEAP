@@ -207,6 +207,9 @@ function reducer(state, action) {
         notifications: state.notifications.map((n) => ({ ...n, unread: false })),
       }
 
+    case 'SET_NOTIFICATIONS':
+      return { ...state, notifications: action.payload }
+
     case 'ADD_NOTIFICATION':
       return {
         ...state,
@@ -406,6 +409,20 @@ export function AppProvider({ children }) {
   useEffect(() => {
     document.documentElement.classList.toggle('dark', state.darkMode)
   }, [state.darkMode])
+
+  useEffect(() => {
+    if (!state.isAuthenticated) return
+    let cancelled = false
+    fetch('/api/notifications')
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && !cancelled) {
+          dispatch({ type: 'SET_NOTIFICATIONS', payload: data.notifications || [] })
+        }
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [state.isAuthenticated, state.user])
 
   const toast = useCallback((message, type = 'info') => {
     const id = Date.now() + Math.random()

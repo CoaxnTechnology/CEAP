@@ -124,6 +124,7 @@ def create_app():
     csrf.exempt(executive_bp)
     csrf.exempt(ops_bp)
     csrf.exempt(workflow_bp)
+    csrf.exempt(settings_bp)
 
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     logs_dir = os.path.join(os.path.dirname(base_dir), "logs")

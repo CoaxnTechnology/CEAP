@@ -127,6 +127,11 @@ export default function Header({
                   className="text-xs font-medium text-navy-600"
                   onClick={() => {
                     dispatch({ type: 'MARK_ALL_NOTIFS_READ' })
+                    fetch('/api/notifications/read', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ ids: notifications.map((n) => n.id) }),
+                    }).catch(() => {})
                     toast('All marked read', 'success')
                   }}
                 >
@@ -142,6 +147,11 @@ export default function Header({
                         type="button"
                         onClick={() => {
                           dispatch({ type: 'MARK_NOTIF_READ', payload: n.id })
+                          fetch('/api/notifications/read', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ ids: [n.id] }),
+                          }).catch(() => {})
                           setShowNotifs(false)
                           navigate('/tasks')
                         }}
