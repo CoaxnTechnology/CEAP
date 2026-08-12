@@ -153,7 +153,7 @@ export default function Finance() {
             {data.trend.values.map((v, i) => (
               <div key={i} className="flex flex-1 flex-col items-center gap-1">
                 <div
-                  className="w-full rounded-t-lg bg-gradient-to-t from-navy-800 to-navy-500"
+                  className="w-full rounded-t-lg bar-gradient"
                   style={{ height: `${(v / 55) * 100}%` }}
                 />
                 <span className="text-[10px] text-slate-400">{data.trend.labels[i]}</span>
