@@ -1,6 +1,6 @@
 import smtplib
-import time
 from email.mime.text import MIMEText
+from sqlalchemy import event
 
 from app.db import SessionLocal
 from app.models import Notification
@@ -84,7 +84,7 @@ def mark_as_read(notification_id: str, user_email: str) -> bool:
 
 
 def send_email(to: str, subject: str, body: str) -> bool:
-    if not OfficeConfig.SMTP_HOST:
+    if not OfficeConfig.SMTP_PASS:
         return False
     try:
         msg = MIMEText(body)
@@ -92,11 +92,32 @@ def send_email(to: str, subject: str, body: str) -> bool:
         msg["From"] = OfficeConfig.SMTP_FROM
         msg["To"] = to
 
-        with smtplib.SMTP(OfficeConfig.SMTP_HOST, OfficeConfig.SMTP_PORT) as server:
-            if OfficeConfig.SMTP_USER:
-                server.starttls()
-                server.login(OfficeConfig.SMTP_USER, OfficeConfig.SMTP_PASS)
+        with smtplib.SMTP(OfficeConfig.SMTP_HOST, OfficeConfig.SMTP_PORT, timeout=10) as server:
+            server.starttls()
+            server.login(OfficeConfig.SMTP_USER, OfficeConfig.SMTP_PASS)
             server.send_message(msg)
         return True
     except Exception:
         return False
+
+
+def send_invite_email(email: str, role: str, temp_password: str, school_name: str = "") -> bool:
+    body = (
+        f"You have been invited to join {school_name or 'CEAP'} as {role}.\n\n"
+        f"Your login details:\nEmail: {email}\nTemporary password: {temp_password}\n\n"
+        "Sign in at https://ceap.coaxn.com and change your password once you log in."
+    )
+    return send_email(email, "You're invited to CEAP", body)
+
+
+def _mirror_notification_email(mapper, connection, target):
+    # ponytail: only the DB notification; HR leave approval emails ride on
+    # the existing Notification rows and need no separate hook
+    send_email(
+        target.user_email,
+        target.title or "CEAP notification",
+        target.message or "",
+    )
+
+
+event.listen(Notification, "after_insert", _mirror_notification_email)

@@ -10,6 +10,7 @@ from sqlalchemy import func
 from app.auth_helpers import login_required
 from app.db import SessionLocal
 from app.models import School, Department, User, DocumentCategory
+from app.services.notification_service import send_invite_email
 
 onboarding_bp = Blueprint("onboarding", __name__, url_prefix="/api/onboarding")
 
@@ -269,6 +270,7 @@ def create_school():
                         created_at=time.time(),
                     )
                     db.add(invited_user)
+                    send_invite_email(invite_email, role, temp_password, school.name)
 
         od_connected = any(c.get("id") == "onedrive" and c.get("status") == "Connected"
                           for c in connectors)
@@ -335,6 +337,7 @@ def create_invitations():
                 created_at=time.time(),
             )
             db.add(user)
+            send_invite_email(email, role, temp_password, "")
             created.append({"email": email, "role": role, "status": "invited"})
 
         db.commit()

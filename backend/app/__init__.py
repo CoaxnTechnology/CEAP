@@ -13,6 +13,7 @@ from app.config import Config
 from app.db import init_db as init_sqlalchemy_db
 from app.services.persistence import init_users_from_config
 from app.services.storage import init_storage
+from app.services import notification_service  # registers Notification email mirror
 
 csrf = CSRFProtect()
 
