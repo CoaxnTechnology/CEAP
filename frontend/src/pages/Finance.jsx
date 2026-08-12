@@ -149,12 +149,13 @@ export default function Finance() {
             </Button>
           }
         >
-          <div className="flex h-40 items-end gap-2">
+          <div className="flex h-40 gap-2">
             {data.trend.values.map((v, i) => (
-              <div key={i} className="flex flex-1 flex-col items-center gap-1">
+              <div key={i} className="flex flex-1 flex-col items-center justify-end gap-1">
                 <div
                   className="w-full rounded-t-lg bar-gradient"
                   style={{ height: `${(v / 55) * 100}%` }}
+                  data-debug={`${v},${(v / 55) * 100}%`}
                 />
                 <span className="text-[10px] text-slate-400">{data.trend.labels[i]}</span>
               </div>
