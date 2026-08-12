@@ -51,6 +51,9 @@ def serve_favicon():
 
 @auth_bp.route("/")
 def index():
+    landing = os.path.join(SPA_DIST, "landing.html")
+    if "user" not in session and os.path.exists(landing):
+        return send_from_directory(SPA_DIST, "landing.html")
     if "user" in session:
         return _serve_spa()
     if os.path.exists(SPA_INDEX):

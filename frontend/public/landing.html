@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>CEAP — The AI Operating System for Schools</title>
+  <meta name="description" content="CEAP (CoAxn Enterprise AI Platform) is the central intelligence layer for schools: Student 360, Finance Intelligence, multi-agent AI, compliance readiness, and document knowledge management." />
+  <style>
+    :root { color-scheme: light; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+      color: #0f172a;
+      background: linear-gradient(180deg, #0f2a4a 0%, #16375f 45%, #f8fafc 45.1%);
+      min-height: 100vh;
+    }
+    .container { max-width: 880px; margin: 0 auto; padding: 48px 24px 64px; }
+    .brand { display: flex; align-items: center; gap: 12px; color: #fff; }
+    .brand .logo {
+      width: 42px; height: 42px; border-radius: 12px;
+      background: rgba(255,255,255,.12); border: 1px solid rgba(255,255,255,.25);
+      display: flex; align-items: center; justify-content: center; font-size: 22px;
+    }
+    .brand h1 { font-size: 20px; font-weight: 700; letter-spacing: .02em; }
+    .brand p { font-size: 12px; opacity: .8; }
+    .card {
+      margin-top: 40px; background: #fff; border-radius: 16px;
+      padding: 40px; box-shadow: 0 10px 30px rgba(2, 32, 71, .18);
+    }
+    .card h2 { font-size: 30px; font-weight: 800; line-height: 1.2; }
+    .card .tag { margin: 8px 0 20px; font-size: 13px; font-weight: 600; letter-spacing: .12em; text-transform: uppercase; color: #2563eb; }
+    .card p { font-size: 16px; line-height: 1.7; color: #334155; }
+    ul { margin: 24px 0 0; padding: 0; list-style: none; display: grid; gap: 12px; }
+    li { display: flex; gap: 10px; font-size: 15px; color: #1e293b; }
+    li::before { content: "✓"; color: #16a34a; font-weight: 700; }
+    .actions { margin-top: 32px; display: flex; flex-wrap: wrap; gap: 12px; }
+    .btn {
+      display: inline-block; padding: 12px 22px; border-radius: 10px;
+      font-size: 15px; font-weight: 600; text-decoration: none; border: 1px solid transparent;
+    }
+    .btn-primary { background: #16375f; color: #fff; }
+    .btn-ghost { background: #f1f5f9; color: #0f172a; border-color: #e2e8f0; }
+    .footer { margin-top: 32px; text-align: center; font-size: 13px; color: #94a3b8; }
+    .footer a { color: #64748b; text-decoration: none; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="brand">
+      <div class="logo">🎓</div>
+      <div>
+        <h1>CEAP</h1>
+        <p>CoAxn Enterprise AI Platform · Education Edition</p>
+      </div>
+    </div>
+
+    <div class="card">
+      <p class="tag">The AI Operating System for Schools</p>
+      <h2>CEAP brings your school's knowledge, compliance, and workflows into one AI-powered platform.</h2>
+      <p>
+        CEAP is the central intelligence layer for educational institutions. It securely connects to your
+        document storage — including Microsoft OneDrive and Google Drive — so staff can upload, browse, and
+        import school files, then search them with natural language and get answers grounded in the
+        institution's own documents through multi-agent AI assistance.
+      </p>
+      <ul>
+        <li>Student 360 with AI risk and timeline insights</li>
+        <li>Finance, Admissions, HR, and compliance intelligence</li>
+        <li>Document management with OneDrive and Google Drive connectors</li>
+        <li>Multi-agent AI with human publish gates</li>
+      </ul>
+      <div class="actions">
+        <a class="btn btn-primary" href="/login">Sign in to your school</a>
+        <a class="btn btn-ghost" href="/privacy">Privacy Policy</a>
+        <a class="btn btn-ghost" href="/terms">Terms of Service</a>
+      </div>
+    </div>
+
+    <p class="footer">© 2026 CoAxn · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></p>
+  </div>
+</body>
+</html>

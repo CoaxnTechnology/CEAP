@@ -536,14 +536,6 @@ export const connectors = [
     lastSync: '28 Jul 2025, 8:02 AM',
     color: '#0078D4',
   },
-  {
-    id: 'dropbox',
-    name: 'Dropbox',
-    description: 'Shared team folders and archives',
-    status: 'Not Connected',
-    lastSync: null,
-    color: '#0061FF',
-  },
 ]
 
 export const connectedFolders = [

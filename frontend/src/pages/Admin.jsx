@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
-  Cloud, FolderSync, UserPlus, Shield,
+  Cloud, UserPlus, Shield,
   CheckCircle2, Link2Off, RefreshCw, HardDrive,
   Upload, Settings, FileText, Trash2, Search,
 } from 'lucide-react'
@@ -16,10 +16,9 @@ import { useApp } from '../context/AppContext'
 const INITIAL_CONNECTORS = [
   { id: 'gdrive', name: 'Google Drive', description: 'Sync shared drives and policy folders', color: '#16a34a' },
   { id: 'onedrive', name: 'OneDrive', description: 'Microsoft school tenant documents', color: '#2563eb' },
-  { id: 'dropbox', name: 'Dropbox', description: 'Shared team folders and archives', color: '#7c3aed' },
 ]
 
-const connectorIcons = { gdrive: HardDrive, onedrive: Cloud, dropbox: FolderSync }
+const connectorIcons = { gdrive: HardDrive, onedrive: Cloud }
 
 const SEED_ROLES = [
   { id: 1, name: 'Principal', users: 1, permissions: 'Full access' },
@@ -59,10 +58,8 @@ export default function Admin() {
   const [uploadOpen, setUploadOpen] = useState(false)
   const [files, setFiles] = useState([])
   const [filesLoading, setFilesLoading] = useState(true)
-  const [odStatus, setOdStatus] = useState(null)
-  const [odSyncing, setOdSyncing] = useState(false)
-  const [gdStatus, setGdStatus] = useState(null)
-  const [gdSyncing, setGdSyncing] = useState(false)
+  const [connInfo, setConnInfo] = useState({})  // { [id]: { enabled, connected, user, email } }
+  const [syncingId, setSyncingId] = useState(null)
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [fileSearch, setFileSearch] = useState('')
 
@@ -81,27 +78,21 @@ export default function Admin() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search)
     const justConnected = params.get('od_connected') === '1'
+    const toastFor = { gdrive: 'Google Drive connected' }
     if (justConnected) {
       window.history.replaceState({}, '', window.location.pathname)
     }
-    api('/api/onedrive/status')
-      .then((s) => {
-        setOdStatus(s)
-        if (s.connected) {
-          setConnStatus((p) => ({ ...p, onedrive: { connected: true, lastSync: 'Just now' } }))
-          if (justConnected) toast('OneDrive connected', 'success')
-        }
-      })
-      .catch(() => {})
-    api('/api/gdrive/status')
-      .then((s) => {
-        setGdStatus(s)
-        if (s.connected) {
-          setConnStatus((p) => ({ ...p, gdrive: { connected: true, lastSync: 'Just now' } }))
-          if (params.get('gd_connected') === '1') toast('Google Drive connected', 'success')
-        }
-      })
-      .catch(() => {})
+    ;['onedrive', 'gdrive'].forEach((id) => {
+      api(`/api/${id}/status`)
+        .then((s) => {
+          setConnInfo((p) => ({ ...p, [id]: s }))
+          if (s.connected) {
+            setConnStatus((p) => ({ ...p, [id]: { connected: true, lastSync: 'Just now' } }))
+            if (justConnected || params.get(`${id}_connected`) === '1') toast(toastFor[id] || 'Cloud connected', 'success')
+          }
+        })
+        .catch(() => {})
+    })
   }, [])
 
   const loadFiles = useCallback(() => {
@@ -163,8 +154,8 @@ export default function Admin() {
   }
 
   function connect(c) {
-    if (c.id === 'onedrive' || c.id === 'gdrive') {
-      const s = c.id === 'onedrive' ? (odStatus || {}) : (gdStatus || {})
+    if (['onedrive', 'gdrive'].includes(c.id)) {
+      const s = connInfo[c.id] || { enabled: false }
       if (s.enabled) { window.location.href = `${API_BASE}/${c.id}/connect?redirect=${encodeURIComponent(window.location.origin + '/admin')}`; return }
       toast(`${c.name} not configured by admin`, 'warning')
       return
@@ -175,7 +166,7 @@ export default function Admin() {
   }
 
   function disconnect(c) {
-    if (c.id === 'onedrive' || c.id === 'gdrive') {
+    if (['onedrive', 'gdrive'].includes(c.id)) {
       api(`/api/${c.id}/disconnect`, { method: 'POST' }).catch(() => {})
     }
     setConnStatus((p) => ({ ...p, [c.id]: { connected: false, lastSync: null } }))
@@ -184,12 +175,12 @@ export default function Admin() {
   }
 
   async function syncCloud(c) {
-    const id = c.id, status = id === 'onedrive' ? odStatus : gdStatus
-    const syncing = id === 'onedrive' ? odSyncing : gdSyncing
-    if (syncing) return
-    if (id === 'onedrive') setOdSyncing(true); else setGdSyncing(true)
+    const id = c.id
+    if (syncingId) return
+    setSyncingId(id)
     try {
-      if (!status?.connected) { toast(`Connect ${c.name} first`, 'warning'); return }
+      const status = connInfo[id] || { connected: false }
+      if (!status.connected) { toast(`Connect ${c.name} first`, 'warning'); return }
       async function listAll(folderId) {
         const data = await api(`/api/${id}/files?folder=${folderId || 'root'}`)
         const rfiles = data.files || []
@@ -210,11 +201,11 @@ export default function Admin() {
       toast(`Imported ${importData.imported?.length || 0} files from ${c.name}`, 'success')
       loadFiles()
     } catch (err) { toast(`${c.name} sync failed: ` + err.message, 'error') }
-    finally { if (id === 'onedrive') setOdSyncing(false); else setGdSyncing(false) }
+    finally { setSyncingId(null) }
   }
 
   async function syncOne(c) {
-    if (c.id === 'onedrive' || c.id === 'gdrive') {
+    if (['onedrive', 'gdrive'].includes(c.id)) {
       return syncCloud(c)
     }
     if (!connStatus[c.id]?.connected) { toast('Connect first', 'warning'); return }
@@ -275,8 +266,8 @@ export default function Admin() {
                     {connected ? 'Manage' : 'Connect'}
                   </Button>
                   {connected && (
-                    <Button size="sm" variant="ghost" onClick={() => syncOne(c)} disabled={(c.id === 'onedrive' && odSyncing) || (c.id === 'gdrive' && gdSyncing)} title="Sync now">
-                      <RefreshCw className={`h-4 w-4 ${(c.id === 'onedrive' && odSyncing) || (c.id === 'gdrive' && gdSyncing) ? 'animate-spin' : ''}`} />
+                    <Button size="sm" variant="ghost" onClick={() => syncOne(c)} disabled={syncingId === c.id} title="Sync now">
+                      <RefreshCw className={`h-4 w-4 ${syncingId === c.id ? 'animate-spin' : ''}`} />
                     </Button>
                   )}
                 </div>

@@ -62,7 +62,7 @@ export default function DocumentDetail() {
     doc.snippet ||
     `This is a prototype view of "${doc.title}".
 
-In production, CEAP would render the full document from the connected source (Google Drive, OneDrive, or Dropbox), with version history, owners, and audit trail.
+In production, CEAP would render the full document from the connected source (Google Drive or OneDrive), with version history, owners, and audit trail.
 
 Department: ${doc.department || '—'}
 Type: ${doc.type || '—'}
