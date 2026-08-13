@@ -77,17 +77,23 @@ export default function Executive() {
   const date = data?.date || morningBriefing.date
   const summary = data?.summary || morningBriefing.summary
   const bullets = data?.bullets || morningBriefing.bullets
-  const recommendations = data?.recommendations || [
-    'Approve fee waiver for Kabir Sharma before SLA expires',
-    'Start Fire Safety Certificate renewal workflow',
-    'Counselor outreach for 2 high-risk Class 9–10 students',
-  ]
+  const recommendations = data?.recommendations?.length
+    ? data.recommendations
+    : [
+        'Approve fee waiver for Kabir Sharma before SLA expires',
+        'Start Fire Safety Certificate renewal workflow',
+        'Counselor outreach for 2 high-risk Class 9–10 students',
+      ]
   const kpis = kpiConfig
-  const tasks = data?.tasks || seedTasks
+  const tasks = data?.tasks?.length ? data.tasks : seedTasks
   const openTasks = tasks.filter((t) => t.status !== 'Done')
-  const pendingApprovals = data?.approvals || seedApprovals.filter((a) => a.status === 'Pending')
-  const riskStudents = data?.riskStudents || seedStudents.filter((s) => s.riskLevel === 'High')
-  const calendarEvents = data?.calendar || seedEvents.slice(0, 4)
+  const pendingApprovals = data?.approvals?.length
+    ? data.approvals
+    : seedApprovals.filter((a) => a.status === 'Pending')
+  const riskStudents = data?.riskStudents?.length
+    ? data.riskStudents
+    : seedStudents.filter((s) => s.riskLevel === 'High')
+  const calendarEvents = data?.calendar?.length ? data.calendar : seedEvents.slice(0, 4)
   const complianceAlert = data?.complianceAlert || {
     message: 'Fire Safety Certificate expires in 18 days. Inspection readiness at 74%.',
   }

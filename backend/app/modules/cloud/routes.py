@@ -8,6 +8,7 @@ from app.services.onedrive import (
     graph_request,
     graph_download,
     list_onedrive_files,
+    get_fresh_token,
 )
 from app.services.google_drive import (
     build_auth_url,
@@ -19,8 +20,11 @@ from app.services.google_drive import (
 from app.services.file_parser import extract_text_from_bytes, SUPPORTED_EXTS
 from app.services.persistence import get_document_by_source_ref
 from app.services.vector_store import EmbeddingServiceError
-from app.services.rag import current_user_key, register_and_index_for_user
+from app.services.rag import current_user_key, register_and_index_async
 from app.services.classifier import classify
+import logging
+
+log = logging.getLogger("cloud_import")
 
 onedrive_bp = Blueprint("onedrive", __name__)
 gdrive_bp = Blueprint("gdrive", __name__)
@@ -50,24 +54,33 @@ def run_cloud_import(token: str, items: list, source: str, **download_kwargs):
 
         queued_items.append(item)
 
+    log.info(
+        "import source=%s user=%s queued=%d skipped=%d",
+        source, user_key, len(queued_items), len(skipped),
+    )
+
     def _prepare_item(item: dict) -> tuple[str, dict]:
         name = item.get("name", "")
         item_id = item.get("item_id") or item.get("id") or ""
         ext = os.path.splitext(name)[1].lower()
         if ext not in SUPPORTED_EXTS and not item.get("export_mime"):
+            log.warning("import unsupported name=%s ext=%s", name, ext)
             return "error", {"name": name, "error": f"Unsupported type: {ext}"}
 
         try:
             if item_id and get_document_by_source_ref(user_key, item_id, source=source):
                 return "skipped", {"name": name, "reason": "Already imported"}
 
-            raw = download(**{"token": token, "item": item, **download_kwargs})
+            raw = download_kwargs["download"](token=token, item=item)
             if not raw:
+                log.warning("import download_failed name=%s id=%s", name, item_id)
                 return "error", {"name": name, "error": "Download failed"}
 
-            text = extract_text_from_bytes(raw, name)
+            extract_name = name if os.path.splitext(name)[1] else name + (item.get("ext") or "")
+            text = extract_text_from_bytes(raw, extract_name)
             if not text:
-                return "error", {"name": name, "error": "No text extracted"}
+                log.warning("import no_text name=%s id=%s", name, item_id)
+                return "error", {"name": name, "error": "Empty file: no extractable text"}
 
             return "prepared", {
                 "name": name,
@@ -77,6 +90,7 @@ def run_cloud_import(token: str, items: list, source: str, **download_kwargs):
                 "path": item.get("path", ""),
             }
         except Exception as e:
+            log.warning("import prepare_error name=%s id=%s err=%s", name, item_id, e)
             return "error", {"name": name, "error": str(e)}
 
     prepared_items = []
@@ -96,7 +110,7 @@ def run_cloud_import(token: str, items: list, source: str, **download_kwargs):
     for payload in prepared_items:
         try:
             dept = classify(payload["text"], payload["name"])
-            entry = register_and_index_for_user(
+            entry = register_and_index_async(
                 user_key,
                 payload["name"],
                 payload["text"],
@@ -111,6 +125,13 @@ def run_cloud_import(token: str, items: list, source: str, **download_kwargs):
             errors.append({"name": payload["name"], "error": str(e)})
         except Exception as e:
             errors.append({"name": payload["name"], "error": str(e)})
+
+    log.info(
+        "import done source=%s imported=%d errors=%d skipped=%d",
+        source, len(imported), len(errors), len(skipped),
+    )
+    for e in errors:
+        log.warning("import error item=%s reason=%s", e.get("name"), e.get("error"))
 
     return jsonify(
         {"success": True, "imported": imported, "errors": errors, "skipped": skipped}
@@ -133,6 +154,7 @@ def onedrive_connect():
         OneDriveConfig.SCOPES,
         redirect_uri=OneDriveConfig.REDIRECT_URI,
         state=session.get("user_key", ""),
+        prompt="select_account",
     )
     return redirect(auth_url)
 
@@ -145,7 +167,16 @@ def onedrive_callback():
     if error or not code:
         return redirect(url_for("auth.chat") + f"?od_error={error or 'no_code'}")
 
-    result = get_msal_app().acquire_token_by_authorization_code(
+    from msal import SerializableTokenCache
+    cache = SerializableTokenCache()
+    cached = session.get("od_cache")
+    if cached:
+        try:
+            cache.deserialize(cached)
+        except Exception:
+            pass
+    app = get_msal_app(cache)
+    result = app.acquire_token_by_authorization_code(
         code, scopes=OneDriveConfig.SCOPES, redirect_uri=OneDriveConfig.REDIRECT_URI
     )
     if "access_token" not in result:
@@ -155,6 +186,7 @@ def onedrive_callback():
         )
 
     token = result["access_token"]
+    session["od_cache"] = cache.serialize()
     me = graph_request("/me", token) or {}
     od_user = me.get("displayName", "OneDrive User")
     od_email = me.get("mail") or me.get("userPrincipalName", "")
@@ -172,6 +204,7 @@ def onedrive_callback():
 @login_required
 def onedrive_disconnect():
     session.pop("od_token", None)
+    session.pop("od_cache", None)
     session.pop("od_user", None)
     session.pop("od_email", None)
     if request.method == "GET":
@@ -195,7 +228,9 @@ def onedrive_status():
 @onedrive_bp.route("/api/onedrive/files")
 @login_required
 def onedrive_files():
-    token = session.get("od_token")
+    token, new_cache = get_fresh_token(session.get("od_cache"), session.get("od_token"))
+    if new_cache:
+        session["od_cache"] = new_cache
     if not token:
         return jsonify({"error": "OneDrive not connected"}), 401
     folder_id = (request.args.get("folder") or "root").strip() or "root"
@@ -209,7 +244,9 @@ def onedrive_files():
 @onedrive_bp.route("/api/onedrive/import", methods=["POST"])
 @login_required
 def onedrive_import():
-    token = session.get("od_token")
+    token, new_cache = get_fresh_token(session.get("od_cache"), session.get("od_token"))
+    if new_cache:
+        session["od_cache"] = new_cache
     if not token:
         return jsonify({"error": "OneDrive not connected"}), 401
 

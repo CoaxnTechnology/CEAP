@@ -48,13 +48,16 @@ def drive_request(endpoint: str, token: str, **kwargs):
         params=kwargs.get("params"),
         timeout=30,
     )
-    return resp.json() if resp.status_code == 200 else None
+    if resp.status_code != 200:
+        raise RuntimeError(f"Drive API {resp.status_code}: {resp.text[:200]}")
+    return resp.json()
 
 
 def drive_download(file_id: str, token: str, mime_type: str | None = None):
-    url = f"{DRIVE_BASE}/files/{file_id}?alt=media"
     if mime_type:
-        url += f"&mimeType={mime_type}"
+        url = f"{DRIVE_BASE}/files/{file_id}/export?mimeType={mime_type}"
+    else:
+        url = f"{DRIVE_BASE}/files/{file_id}?alt=media"
     resp = http_requests.get(
         url, headers=_session_headers(token), timeout=60
     )

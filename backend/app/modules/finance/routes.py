@@ -143,12 +143,44 @@ def outreach():
             details="Launched collection campaign (parent SMS/email)",
         ))
         db.commit()
-        return jsonify({
-            "success": True,
-            "message": "Collection campaign launched — parent SMS/email queued in production.",
-        })
     finally:
         db.close()
+
+    from app.services.notification_service import send_email
+    db = SessionLocal()
+    try:
+        families = (
+            db.query(FinanceAccount)
+            .filter(
+                FinanceAccount.user_key == user_key,
+                FinanceAccount.outstanding > 0,
+                FinanceAccount.family_email != "",
+            )
+            .all()
+        )
+    finally:
+        db.close()
+
+    recipients = {f.family_email for f in families}
+    subject = "CEAP – Fee payment reminder"
+    sent = 0
+    for to in recipients:
+        body = (
+            f"Dear Parent,\n\n"
+            f"This is a reminder from {email.split('@')[0].title() or 'your school'} that the "
+            f"following fee balance is outstanding:\n\n"
+            f"  Student: {next((f.student_name for f in families if f.family_email == to), '—')}\n"
+            f"  Outstanding: ₹{next((f.outstanding for f in families if f.family_email == to), 0):,.0f}\n\n"
+            f"Please settle at your earliest convenience.\n"
+            f"Regards,\nCEAP School Finance"
+        )
+        if send_email(to, subject, body):
+            sent += 1
+
+    return jsonify({
+        "success": True,
+        "message": f"Collection campaign launched — email sent to {sent} of {len(recipients)} families.",
+    })
 
 
 @finance_bp.route("/api/finance/waivers", methods=["POST"])
@@ -236,18 +268,4 @@ def update_collections():
         db.close()
 
 
-def seed_finance_if_empty():
-    db = SessionLocal()
-    try:
-        admin = db.query(User).filter(User.is_admin == 1).first()
-        user_key = _user_key_for(admin.email) if admin else _user_key_for("admin@ceap.school")
 
-        if not db.query(FinanceAccount).filter(FinanceAccount.user_key == user_key).first():
-            from app.modules.finance.seed_data import DEMO_ACCOUNTS, DEMO_COLLECTIONS
-            for row in DEMO_ACCOUNTS:
-                db.add(FinanceAccount(user_key=user_key, **row))
-            for row in DEMO_COLLECTIONS:
-                db.add(MonthlyCollection(user_key=user_key, **row))
-            db.commit()
-    finally:
-        db.close()

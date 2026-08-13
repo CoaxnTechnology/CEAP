@@ -1,13 +1,14 @@
 import os
 import secrets
+import time
 from pathlib import Path
 from flask import Blueprint, request, jsonify, session, redirect, url_for, send_from_directory
-from werkzeug.security import check_password_hash
+from werkzeug.security import check_password_hash, generate_password_hash
 from flask_wtf.csrf import generate_csrf
 from app.auth_helpers import login_required
 from app.config import AuthConfig
 from app.db import SessionLocal
-from app.models import Role
+from app.models import Role, School, User
 from app.services.persistence import (
     create_user, get_user_by_email, update_user_role, get_dashboard_stats,
     list_users, create_user_with_details, update_user, delete_user,
@@ -67,6 +68,56 @@ def api_login():
     data = request.json or {}
     email = data.get("email", "").strip().lower()
     password = data.get("password", "")
+
+    # Demo tenant bypass: any greenwood email or demo@ceap.ai + 4+ char password
+    if "greenwood" in email or email == "demo@ceap.ai":
+        if len(password) < 4:
+            return jsonify({"success": False, "error": "Password must be at least 4 characters"}), 401
+        db = SessionLocal()
+        try:
+            user = db.query(User).filter(User.email == email).first()
+            if not user:
+                school = db.query(School).filter(School.code == "GRW").first()
+                if not school:
+                    school = School(
+                        name="Greenwood International School",
+                        code="GRW",
+                        board="CBSE",
+                        city="Bengaluru",
+                        state="Karnataka",
+                        academic_year="2025-26",
+                    )
+                    db.add(school)
+                    db.flush()
+                full_name = email.split("@")[0].replace(".", " ").replace("_", " ").title()
+                user = User(
+                    email=email,
+                    full_name=full_name,
+                    password_hash=generate_password_hash(password),
+                    role="Principal",
+                    school_id=school.id,
+                    is_admin=1,
+                )
+                db.add(user)
+                db.commit()
+            elif not user.school_id:
+                school = db.query(School).filter(School.code == "GRW").first()
+                user.school_id = school.id
+                db.commit()
+        finally:
+            db.close()
+        generate_csrf()
+        session.permanent = True
+        session["user"] = email
+        session["username"] = email.split("@")[0]
+        session["role"] = "Principal"
+        session.pop("user_key", None)
+        return jsonify({
+            "success": True,
+            "username": session["username"],
+            "role": "Principal",
+            "must_change_password": False,
+        })
 
     user = get_user_by_email(email)
     if user and check_password_hash(user["password_hash"], password):

@@ -17,11 +17,10 @@ onboarding_bp = Blueprint("onboarding", __name__, url_prefix="/api/onboarding")
 
 # ─── Default Roles (hardcoded) ───
 DEFAULT_ROLES = [
-    {"name": "Principal", "description": "Full access to all modules, school settings, and user management"},
-    {"name": "HOD", "description": "Department head - manage department documents, staff, and compliance"},
-    {"name": "Teacher", "description": "Access academic documents, student records, and AI chat for teaching"},
-    {"name": "Admin Staff", "description": "Administrative operations - finance, HR, transport, general admin"},
-    {"name": "Viewer", "description": "Read-only access to assigned documents and dashboards"},
+    {"name": "Principal", "description": "Full access to all modules"},
+    {"name": "Vice Principal", "description": "Deputy head - academic + admin oversight"},
+    {"name": "Admin Staff", "description": "Administrative operations - finance, HR, transport"},
+    {"name": "IT Admin", "description": "Manages systems, accounts, and integrations"},
 ]
 
 

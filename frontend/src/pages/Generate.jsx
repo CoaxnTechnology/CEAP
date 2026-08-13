@@ -57,6 +57,7 @@ export default function Generate() {
   const [templates, setTemplates] = useState({})
   const [templatesLoaded, setTemplatesLoaded] = useState(false)
   const [sources, setSources] = useState([])
+  const [draftId, setDraftId] = useState(null)
 
   useEffect(() => {
     api('/api/ai/templates')
@@ -105,8 +106,6 @@ export default function Generate() {
   function goToStep(id) {
     if (id <= step || (id === step + 1 && canAdvance())) {
       setStep(id)
-    } else if (id < step) {
-      setStep(id)
     } else {
       toast('Complete the current step first', 'warning')
     }
@@ -116,6 +115,7 @@ export default function Generate() {
     if (step === 1) return !!docType
     if (step === 2) return !!template
     if (step === 3) return !!draft
+    if (step === 4) return status === 'approved'
     return true
   }
 
@@ -137,6 +137,7 @@ export default function Generate() {
       setTitle(result.title)
       setDraft(result.content)
       setSources(result.sources || [])
+      setDraftId(result.id)
       setStep(3)
       setStatus(null)
       toast('AI draft generated — ready for human review', 'success')
@@ -158,7 +159,7 @@ export default function Generate() {
     }
   }
 
-  function handleApprove() {
+  async function handleApprove() {
     setConfirmPublish(false)
     setStatus('approved')
     setStep(5)
@@ -174,7 +175,25 @@ export default function Generate() {
         audience,
       },
     })
-    toast('Document approved and published to Knowledge Library', 'success')
+    if (!draftId) {
+      toast('Document approved and published to Knowledge Library', 'success')
+      return
+    }
+    try {
+      const res = await api('/api/ai/publish', {
+        method: 'POST',
+        body: JSON.stringify({ draft_id: draftId }),
+      })
+      if (res.already_published) {
+        toast('Document already published — no duplicate email sent', 'info')
+      } else if (res.recipients > 0) {
+        toast(`Document published — emailed to ${res.recipients} recipients`, 'success')
+      } else {
+        toast('Document published — no recipients found', 'success')
+      }
+    } catch {
+      toast('Published to Knowledge Library, but email delivery failed', 'warning')
+    }
   }
 
   function handleReject() {
@@ -420,7 +439,7 @@ export default function Generate() {
             <Button
               className="w-full"
               variant="secondary"
-              disabled={step < 3}
+              disabled={step < 3 || status === 'approved'}
               onClick={() => {
                 setStep(4)
                 setStatus(null)
@@ -463,6 +482,10 @@ export default function Generate() {
                     setStep(1)
                     setStatus(null)
                     setTopic('')
+                    setDraft('')
+                    setTitle('')
+                    setSources([])
+                    setDraftId(null)
                     toast('Started new document', 'info')
                   }}
                 >

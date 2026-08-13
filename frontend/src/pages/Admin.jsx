@@ -181,12 +181,14 @@ export default function Admin() {
     try {
       const status = connInfo[id] || { connected: false }
       if (!status.connected) { toast(`Connect ${c.name} first`, 'warning'); return }
-      async function listAll(folderId) {
+      async function listAll(folderId, visited = new Set()) {
+        if (visited.has(folderId)) return []
+        visited.add(folderId)
         const data = await api(`/api/${id}/files?folder=${folderId || 'root'}`)
         const rfiles = data.files || []
         const docs = []
         for (const f of rfiles) {
-          if (f.isFolder) docs.push(...(await listAll(f.id)))
+          if (f.isFolder) docs.push(...(await listAll(f.id, visited)))
           else docs.push(f)
         }
         return docs
@@ -198,7 +200,12 @@ export default function Admin() {
         body: JSON.stringify({ files: docs }),
       })
       setConnStatus((p) => ({ ...p, [id]: { ...p[id], lastSync: nowLabel() } }))
-      toast(`Imported ${importData.imported?.length || 0} files from ${c.name}`, 'success')
+      const detail = [
+        importData.imported?.length ? `Imported ${importData.imported.length}` : '',
+        importData.errors?.length ? `${importData.errors.length} failed: ${importData.errors.map((e) => e.name).join(', ')}` : '',
+        importData.skipped?.length ? `${importData.skipped.length} skipped` : '',
+      ].filter(Boolean).join(' · ')
+      toast(detail || `No new files from ${c.name}`, importData.errors?.length ? 'error' : 'success')
       loadFiles()
     } catch (err) { toast(`${c.name} sync failed: ` + err.message, 'error') }
     finally { setSyncingId(null) }

@@ -101,7 +101,12 @@ export default function Onboarding() {
       // Check if returning from OneDrive OAuth
       const params = new URLSearchParams(window.location.search)
       if (params.get('od_connected') === '1') {
-        setOdStatus((prev) => ({ ...prev, status: 'Connected', connected: true }))
+        setOdStatus((prev) => ({
+          ...prev,
+          status: 'Connected',
+          connected: true,
+          lastSync: new Date().toLocaleString('en-IN'),
+        }))
         toast('OneDrive connected successfully', 'success')
       }
       // Clear saved state
@@ -137,10 +142,9 @@ export default function Onboarding() {
         ])
         setRoles([
           { name: 'Principal', description: 'Full access to all modules' },
-          { name: 'HOD', description: 'Department head' },
-          { name: 'Teacher', description: 'Academic access' },
-          { name: 'Admin Staff', description: 'Admin operations' },
-          { name: 'Viewer', description: 'Read-only access' },
+          { name: 'Vice Principal', description: 'Deputy head - academic + admin oversight' },
+          { name: 'Admin Staff', description: 'Administrative operations - finance, HR, transport' },
+          { name: 'IT Admin', description: 'Manages systems, accounts, and integrations' },
         ])
       }
       setLoading(false)
@@ -172,7 +176,12 @@ export default function Onboarding() {
         window.location.href = res.auth_url
         return
       }
-      setOdStatus((prev) => ({ ...prev, status: 'Connected', connected: true }))
+      setOdStatus((prev) => ({
+        ...prev,
+        status: 'Connected',
+        connected: true,
+        lastSync: new Date().toLocaleString('en-IN'),
+      }))
       toast('OneDrive connected successfully', 'success')
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Failed to connect OneDrive', 'error')
@@ -232,6 +241,7 @@ export default function Onboarding() {
       })
 
       completeOnboarding({
+        user: { ...user, name: adminName, role: adminRole },
         school: {
           ...school,
           studentCount: Number(school.studentCount) || 0,
@@ -239,10 +249,9 @@ export default function Onboarding() {
           departments: depts.filter((d) => d.enabled).map((d) => d.name),
         },
         connectors: odStatus.connected
-          ? [{ id: 'onedrive', name: 'OneDrive', status: 'Connected', lastSync: null }]
+          ? [{ id: 'onedrive', name: 'OneDrive', status: 'Connected', lastSync: odStatus.lastSync }]
           : [],
       })
-      toast('Welcome to CEAP! School onboarding complete.', 'success')
       navigate('/', { replace: true })
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Onboarding failed')
@@ -546,7 +555,10 @@ export default function Onboarding() {
               </div>
               <button
                 type="button"
-                onClick={() => setStep(5)}
+                onClick={() => {
+                  toast('You can connect sources anytime from Admin', 'info')
+                  setStep(5)
+                }}
                 className="text-sm font-medium text-navy-600 hover:underline"
               >
                 Skip for now →
@@ -573,8 +585,8 @@ export default function Onboarding() {
                 />
                 <ReviewItem label="Primary admin" value={`${adminName} (${adminRole})`} />
                 <ReviewItem
-                  label="OneDrive"
-                  value={odStatus.connected ? 'Connected' : 'Not connected'}
+                  label="Connectors"
+                  value={odStatus.connected ? odStatus.name : 'None yet'}
                 />
                 <ReviewItem
                   label="Invites pending"

@@ -176,6 +176,11 @@ export default function Compliance() {
     return c
   }, [evidence])
 
+  const readiness = useMemo(() => {
+    const total = counts.Available + counts.Expiring + counts.Missing + counts.Outdated
+    return total ? Math.round((counts.Available / total) * 100) : 74
+  }, [counts])
+
   const frameworkLabel = frameworks.find((f) => f.id === framework)?.label || ''
 
   return (
@@ -193,7 +198,7 @@ export default function Compliance() {
       />
 
       <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <KpiCard label="Readiness score" value="74%" delta="+3 pts" trend="up" spark={[60, 62, 65, 68, 70, 72, 74]} />
+        <KpiCard label="Readiness score" value={`${readiness}%`} trend="up" spark={[60, 62, 65, 68, 70, 72, readiness]} />
         <KpiCard label="Available evidence" value={String(counts.Available)} trend="up" spark={[30, 32, 35, 38, 40, 41, counts.Available || 42]} />
         <KpiCard label="Expiring" value={String(counts.Expiring)} trend="warn" spark={[8, 7, 6, 6, 5, 5, counts.Expiring || 5]} />
         <KpiCard label="Missing" value={String(counts.Missing)} trend="down" spark={[12, 11, 10, 9, 8, 7, counts.Missing || 7]} />

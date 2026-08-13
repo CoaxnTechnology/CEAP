@@ -26,7 +26,12 @@ def extract_text(filepath: str, original_name: str) -> str:
                 text = "\n\n".join(pages)
         elif ext == ".docx":
             doc = DocxDocument(filepath)
-            text = "\n\n".join(p.text for p in doc.paragraphs if p.text.strip())
+            parts = [p.text for p in doc.paragraphs if p.text.strip()]
+            for table in doc.tables:
+                for row in table.rows:
+                    cells = [c.text.strip() for c in row.cells]
+                    parts.append(" | ".join(c for c in cells if c))
+            text = "\n\n".join(parts)
         elif ext == ".pptx":
             prs = Presentation(filepath)
             slides = []
@@ -46,7 +51,7 @@ def extract_text(filepath: str, original_name: str) -> str:
             ]
             text = "\n\n".join(parts)
         elif ext == ".csv":
-            text = f"[CSV Data]\n{pd.read_csv(filepath).to_string(index=False)}"
+            text = f"[CSV Data]\n{pd.read_csv(filepath, on_bad_lines='skip').to_string(index=False)}"
         elif ext == ".txt":
             with open(filepath, "r", encoding="utf-8", errors="replace") as f:
                 text = f.read()

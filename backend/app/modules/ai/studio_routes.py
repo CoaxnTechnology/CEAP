@@ -2,10 +2,11 @@ from flask import Blueprint, request, jsonify
 from sqlalchemy import desc
 from app.auth_helpers import login_required
 from app.db import SessionLocal
-from app.models import DocumentTemplate, AIDraft
+from app.models import DocumentTemplate, AIDraft, User, Student
 from app.services.rag import get_store, get_registry, _user_key
 from .routes import _build_source_payload
 from app.services.gemini import generate_answer, GeminiServiceError
+from app.services.notification_service import create_notification
 from app.config import RAGConfig
 
 studio_bp = Blueprint("studio", __name__)
@@ -191,3 +192,56 @@ def list_drafts():
         "topic": r.topic,
         "created_at": r.created_at,
     } for r in rows])
+
+
+def _audience_emails(audience):
+    db = SessionLocal()
+    try:
+        if audience.lower() == "staff":
+            return [u.email for u in db.query(User).all() if u.email]
+        emails = [s.parent_email for s in db.query(Student).all() if s.parent_email]
+        if audience.lower() != "parents":
+            emails += [u.email for u in db.query(User).all() if u.email]
+        return sorted(set(emails))
+    finally:
+        db.close()
+
+
+@studio_bp.route("/api/ai/publish", methods=["POST"])
+@login_required
+def publish_draft():
+    data = request.json or {}
+    draft_id = data.get("draft_id", "")
+    user_key = _user_key()
+
+    db = SessionLocal()
+    try:
+        draft = db.query(AIDraft).filter(
+            AIDraft.id == draft_id, AIDraft.user_key == user_key
+        ).first()
+        if not draft:
+            return jsonify({"error": "Draft not found"}), 404
+        already_published = draft.status == "published"
+        if not already_published:
+            draft.status = "published"
+            db.commit()
+        title = draft.title
+        snippet = (draft.content or "")[:300]
+        audience = draft.audience or "Parents"
+    finally:
+        db.close()
+
+    if already_published:
+        return jsonify({"success": True, "status": "published", "recipients": 0, "already_published": True})
+
+    recipients = _audience_emails(audience)
+    for email in recipients:
+        create_notification(
+            user_email=email,
+            notif_type="document",
+            title=title,
+            message=f"New published document: {title}\n\n{snippet}",
+            link="",
+        )
+    return jsonify({"success": True, "status": "published", "recipients": len(recipients)})
+

@@ -1,17 +1,36 @@
 import os
-from msal import ConfidentialClientApplication
+from msal import ConfidentialClientApplication, SerializableTokenCache
 import requests as http_requests
 from app.config import OneDriveConfig
 
 GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 
 
-def get_msal_app():
+def get_msal_app(cache: SerializableTokenCache | None = None):
     return ConfidentialClientApplication(
         OneDriveConfig.CLIENT_ID,
         authority=OneDriveConfig.AUTHORITY,
         client_credential=OneDriveConfig.CLIENT_SECRET,
+        token_cache=cache or SerializableTokenCache(),
     )
+
+
+def get_fresh_token(serialized_cache: str | None, stored_token: str | None):
+    """Return (access_token, updated_cache) — refreshing via MSAL when possible."""
+    cache = SerializableTokenCache()
+    if serialized_cache:
+        try:
+            cache.deserialize(serialized_cache)
+        except Exception:
+            pass
+    app = get_msal_app(cache)
+    accounts = app.get_accounts()
+    if accounts:
+        result = app.acquire_token_silent_with_error(OneDriveConfig.SCOPES, account=accounts[0])
+        token = result.get("access_token") if result else None
+        if token:
+            return token, cache.serialize()
+    return stored_token, serialized_cache
 
 
 def graph_request(endpoint: str, token: str):
@@ -61,8 +80,12 @@ def list_onedrive_files(token: str, folder_id: str | None = None) -> list:
             headers={"Authorization": f"Bearer {token}"},
             timeout=30,
         )
-        if resp.status_code != 200:
+        if resp.status_code == 404:
             return results
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"OneDrive API {resp.status_code}: {resp.text[:200]}"
+            )
 
         data = resp.json()
         for item in data.get("value", []):

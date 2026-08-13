@@ -8,6 +8,7 @@ from logging.handlers import RotatingFileHandler
 from flask import Flask
 from flask_cors import CORS
 from flask_wtf.csrf import CSRFProtect
+from flask_session import Session
 
 from app.config import Config
 from app.db import init_db as init_sqlalchemy_db
@@ -16,6 +17,7 @@ from app.services.storage import init_storage
 from app.services import notification_service  # registers Notification email mirror
 
 csrf = CSRFProtect()
+server_session = Session()
 
 
 def create_app():
@@ -25,8 +27,15 @@ def create_app():
     app.config['SESSION_PERMANENT'] = True
     app.config['PERMANENT_SESSION_LIFETIME'] = 86400
     app.config['WTF_CSRF_TIME_LIMIT'] = None
+    app.config['SESSION_TYPE'] = 'filesystem'
+    app.config['SESSION_FILE_DIR'] = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "flask_session"
+    )
+    os.makedirs(app.config['SESSION_FILE_DIR'], exist_ok=True)
 
     CORS(app, supports_credentials=True)
+
+    server_session.init_app(app)
 
     from app.modules.academic.routes import academic_bp
     from app.modules.admin.routes import auth_bp

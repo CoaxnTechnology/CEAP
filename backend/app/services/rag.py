@@ -211,6 +211,55 @@ def register_and_index_for_user(
     return {"file_id": file_id, **entry}
 
 
+def register_and_index_async(
+    user_key: str,
+    name: str,
+    text: str,
+    size: int,
+    source: str = "local",
+    source_ref: str = "",
+    category_id: str = None,
+    department: str = None,
+    file_path: str = "",
+) -> dict:
+    """
+    Save the DB entry immediately (so the file shows up), then embed/index
+    into Chroma in a background thread. Returns the entry without waiting
+    for embedding.
+    """
+    import threading
+
+    _clear_request_cache()
+
+    file_id = str(uuid.uuid4())
+    chunks = chunk_text(text, name, file_id)
+
+    entry = {
+        "name": name,
+        "source_name": name,
+        "size": size,
+        "chunks": len(chunks),
+        "uploaded_at": time.time(),
+        "source": source,
+        "source_ref": source_ref,
+        "category_id": category_id,
+        "department": department,
+        "file_path": file_path,
+    }
+
+    save_document(user_key, file_id, entry)
+
+    def _index_in_background():
+        try:
+            ChromaStore(user_key).add_chunks(chunks)
+        except Exception as e:
+            print(f"[rag] background index failed file={file_id} err={e}", flush=True)
+
+    threading.Thread(target=_index_in_background, daemon=True).start()
+
+    return {"file_id": file_id, **entry}
+
+
 def remove_from_index(file_id: str) -> bool:
     """Remove a file from Chroma and the registry. Returns True on success."""
     _clear_request_cache()
