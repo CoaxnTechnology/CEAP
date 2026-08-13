@@ -4,6 +4,7 @@ import uuid
 
 from werkzeug.security import generate_password_hash
 from sqlalchemy import func
+from flask import session
 
 from app.db import SessionLocal
 from app.models import (
@@ -732,8 +733,21 @@ def get_dashboard_stats(user_key: str = None) -> dict:
             chat_base = chat_base.join(ChatSession).filter(ChatSession.user_key == user_key)
         chat_count = chat_base.count()
 
-        user_count = db.query(User).count()
-        category_count = db.query(DocumentCategory).count()
+        email = (session.get("user") or "").strip().lower()
+        me = db.query(User).filter(User.email == email).first()
+        school_id = me.school_id if me and me.school_id else None
+
+        if school_id:
+            user_count = db.query(User).filter(User.school_id == school_id).count()
+            category_count = (
+                db.query(DocumentCategory).filter(DocumentCategory.school_id == school_id).count()
+            )
+        elif email:
+            user_count = db.query(User).filter(User.email == email).count()
+            category_count = 0
+        else:
+            user_count = db.query(User).count()
+            category_count = db.query(DocumentCategory).count()
 
         recent_base = db.query(RepositoryDocument)
         if user_key:

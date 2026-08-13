@@ -21,9 +21,9 @@ DEFAULT_TEMPLATES = [
 
 
 def _db_key(db):
-    admin = db.query(User).filter(User.is_admin == 1).first()
-    email = admin.email if admin else "admin@ceap.school"
-    return hashlib.sha256(email.encode("utf-8")).hexdigest()[:32]
+    from flask import session
+    email = (session.get("user") or "").strip().lower()
+    return hashlib.sha256(email.encode("utf-8")).hexdigest()[:32] if email else hashlib.sha256(b"admin@ceap.school").hexdigest()[:32]
 
 
 def _serialize(w):

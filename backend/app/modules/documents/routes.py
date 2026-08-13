@@ -37,8 +37,9 @@ def _user_key_for(email: str) -> str:
 
 
 def _db_key(db):
-    admin = db.query(User).filter(User.is_admin == 1).first()
-    return _user_key_for(admin.email) if admin else _user_key_for("admin@ceap.school")
+    from flask import session
+    email = (session.get("user") or "").strip().lower()
+    return _user_key_for(email) if email else _user_key_for("admin@ceap.school")
 
 
 @files_bp.route("/api/upload", methods=["POST"])

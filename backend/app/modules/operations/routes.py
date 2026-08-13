@@ -1,12 +1,17 @@
+import hashlib
 import time
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, session
 
 from app.auth_helpers import login_required
 from app.db import SessionLocal
 from app.models import ApprovalRequest, Ticket
 
 ops_bp = Blueprint("operations", __name__)
+
+
+def _cur_key():
+    return hashlib.sha256((session.get("user") or "admin@ceap.school").encode("utf-8")).hexdigest()[:32]
 
 
 def _serialize_ticket(t):
@@ -49,7 +54,7 @@ def _serialize_approval(a):
 def list_tasks():
     db = SessionLocal()
     try:
-        rows = db.query(Ticket).order_by(Ticket.created_at.desc()).all()
+        rows = db.query(Ticket).filter(Ticket.user_key == _cur_key()).order_by(Ticket.created_at.desc()).all()
         return jsonify({"tasks": [_serialize_ticket(t) for t in rows]})
     finally:
         db.close()
@@ -65,6 +70,7 @@ def create_task():
     db = SessionLocal()
     try:
         t = Ticket(
+            user_key=_cur_key(),
             title=title,
             description=(data.get("description") or "").strip(),
             category=(data.get("workspace") or data.get("category") or "general").strip(),
@@ -108,7 +114,7 @@ def update_task(task_id):
 def list_approvals():
     db = SessionLocal()
     try:
-        rows = db.query(ApprovalRequest).order_by(ApprovalRequest.created_at.desc()).all()
+        rows = db.query(ApprovalRequest).filter(ApprovalRequest.user_key == _cur_key()).order_by(ApprovalRequest.created_at.desc()).all()
         return jsonify({"approvals": [_serialize_approval(a) for a in rows]})
     finally:
         db.close()

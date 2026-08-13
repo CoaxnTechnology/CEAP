@@ -239,6 +239,7 @@ class Meeting(Base):
     __tablename__ = "meetings"
 
     id = Column(String(64), primary_key=True, default=_uuid)
+    user_key = Column(String(64), default="")
     title = Column(String(255), nullable=False)
     description = Column(Text, default="")
     date = Column(String(20), nullable=False)
@@ -271,6 +272,7 @@ class Ticket(Base):
     __tablename__ = "tickets"
 
     id = Column(String(64), primary_key=True, default=_uuid)
+    user_key = Column(String(64), default="")
     title = Column(String(255), nullable=False)
     description = Column(Text, default="")
     category = Column(String(100), default="general")
@@ -286,6 +288,7 @@ class ApprovalRequest(Base):
     __tablename__ = "approval_requests"
 
     id = Column(String(64), primary_key=True, default=_uuid)
+    user_key = Column(String(64), default="")
     workflow_type = Column(String(50), nullable=False)
     requester = Column(String(255), nullable=False)
     approver = Column(String(255), nullable=False)

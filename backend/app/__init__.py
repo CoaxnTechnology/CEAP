@@ -77,32 +77,6 @@ def create_app():
         init_users_from_config()
         from app.modules.ai.studio_routes import seed_templates_if_empty
         seed_templates_if_empty()
-        from app.modules.hr.routes import seed_hr_if_empty
-        seed_hr_if_empty()
-        from app.modules.finance.routes import seed_finance_if_empty
-        seed_finance_if_empty()
-        from app.modules.admissions.routes import seed_admissions_if_empty
-        seed_admissions_if_empty()
-        from app.modules.students.routes import (
-            seed_communications_if_empty,
-            seed_documents_if_empty,
-            seed_students_if_empty,
-        )
-        seed_students_if_empty()
-        seed_communications_if_empty()
-        seed_documents_if_empty()
-        from app.modules.calendar.routes import seed_calendar_if_empty
-        seed_calendar_if_empty()
-        from app.modules.academic.routes import seed_academic_if_empty
-        seed_academic_if_empty()
-        from app.modules.executive.routes import seed_executive_if_empty
-        seed_executive_if_empty()
-        from app.modules.operations.routes import seed_tasks_if_empty
-        seed_tasks_if_empty()
-        from app.modules.workflows.routes import seed_workflows_if_empty
-        seed_workflows_if_empty()
-        from app.modules.meetings.routes import seed_meetings_if_empty
-        seed_meetings_if_empty()
 
     csrf.init_app(app)
     csrf.exempt(auth_bp)

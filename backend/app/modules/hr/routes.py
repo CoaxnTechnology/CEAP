@@ -3,7 +3,7 @@ import json
 import time
 from datetime import datetime, timedelta
 
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, session
 from sqlalchemy import desc
 
 from app.auth_helpers import login_required
@@ -27,6 +27,17 @@ from app.services.rag import _user_key
 from app.services.workflow_engine import process_approval
 
 hr_bp = Blueprint("hr", __name__)
+
+
+def _school_emails(db):
+    email = (session.get("user") or "").strip().lower()
+    me = db.query(User).filter(User.email == email).first()
+    if not me or not me.school_id:
+        return [email]
+    return [
+        u.email
+        for u in db.query(User).filter(User.school_id == me.school_id).all()
+    ]
 
 TRAINING_DUE = 6
 EXPIRING_CONTRACTS = 2
@@ -52,15 +63,6 @@ def _get_rules(db, user_key):
         .filter(HRPolicy.user_key == user_key, HRPolicy.category == "leave", HRPolicy.active == 1)
         .first()
     )
-    if not policy:
-        admin = db.query(User).filter(User.is_admin == 1).first()
-        if admin:
-            admin_key = hashlib.sha256(admin.email.encode("utf-8")).hexdigest()[:32]
-            policy = (
-                db.query(HRPolicy)
-                .filter(HRPolicy.user_key == admin_key, HRPolicy.category == "leave", HRPolicy.active == 1)
-                .first()
-            )
     if policy and policy.rules_json:
         return policy.rules_json
     return DEFAULT_RULES
@@ -153,7 +155,7 @@ def overview():
     try:
         users = (
             db.query(User)
-            .filter(User.status == "active")
+            .filter(User.status == "active", User.email.in_(_school_emails(db)))
             .order_by(User.full_name)
             .all()
         )
@@ -172,6 +174,7 @@ def overview():
 
         leaves = (
             db.query(LeaveRequest)
+            .filter(LeaveRequest.user_email.in_(_school_emails(db)))
             .order_by(desc(LeaveRequest.created_at))
             .all()
         )

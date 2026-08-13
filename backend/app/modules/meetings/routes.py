@@ -1,5 +1,6 @@
 """Meetings + activity feed API."""
 
+import hashlib
 import time
 
 from flask import Blueprint, jsonify, request, session
@@ -9,6 +10,19 @@ from app.db import SessionLocal
 from app.models import ActivityLog, Meeting
 
 meetings_bp = Blueprint("meetings", __name__)
+
+
+def _cur_key():
+    return hashlib.sha256((session.get("user") or "admin@ceap.school").encode("utf-8")).hexdigest()[:32]
+
+
+def _cur_emails(db):
+    from app.models import User
+    email = (session.get("user") or "").strip().lower()
+    me = db.query(User).filter(User.email == email).first()
+    if not me or not me.school_id:
+        return [email]
+    return [u.email for u in db.query(User).filter(User.school_id == me.school_id).all()]
 
 # Backend status -> frontend badge
 _STATUS_FRONTEND = {"scheduled": "Upcoming", "completed": "Completed", "cancelled": "Cancelled"}
@@ -74,7 +88,7 @@ def seed_meetings_if_empty():
 def list_meetings():
     db = SessionLocal()
     try:
-        rows = db.query(Meeting).order_by(Meeting.date.desc(), Meeting.time.desc()).all()
+        rows = db.query(Meeting).filter(Meeting.user_key == _cur_key()).order_by(Meeting.date.desc(), Meeting.time.desc()).all()
         return jsonify({"meetings": [_serialize_meeting(m) for m in rows]})
     finally:
         db.close()
@@ -90,6 +104,7 @@ def create_meeting():
     db = SessionLocal()
     try:
         m = Meeting(
+            user_key=_cur_key(),
             title=title[:255],
             description=(data.get("agenda") or "").strip(),
             date=data.get("date"),
@@ -151,7 +166,13 @@ def delete_meeting(meeting_id):
 def list_activity():
     db = SessionLocal()
     try:
-        rows = db.query(ActivityLog).order_by(ActivityLog.created_at.desc()).limit(50).all()
+        rows = (
+            db.query(ActivityLog)
+            .filter(ActivityLog.user_email.in_(_cur_emails(db)))
+            .order_by(ActivityLog.created_at.desc())
+            .limit(50)
+            .all()
+        )
         return jsonify({"activity": [_serialize_activity(a) for a in rows]})
     finally:
         db.close()
