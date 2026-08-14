@@ -148,7 +148,7 @@ export default function AIChat() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ question: content, session_id: sessionId }),
+      body: JSON.stringify({ question: content, session_id: sessionId, department: activeDept, agent_scope: agentScope }),
     })
 
     const isSse = (res.headers.get('content-type') || '').includes('text/event-stream')

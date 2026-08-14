@@ -337,6 +337,7 @@ def api_chat_stream():
     department = (data.get("department") or "").strip()
     session_id = (data.get("session_id") or "").strip() or None
     history  = data.get("history", [])
+    agent_scope = (data.get("agent_scope") or "").strip()
 
     if not question:
         return jsonify({"error": "No question provided"}), 400
@@ -350,49 +351,33 @@ def api_chat_stream():
     registry = get_registry()
     indexed_file_ids = store.indexed_file_ids()
 
-    if not indexed_file_ids:
-        msg = (
-            "Your saved files are not searchable right now. Re-upload them to rebuild the index, then ask again."
-            if registry else
-            "No documents indexed yet. Upload local files or import from OneDrive first."
+    context = ""
+    top_chunks = []
+    if indexed_file_ids:
+        source_filter = (
+            [fid for fid in file_ids if fid in registry and fid in indexed_file_ids]
+            if file_ids else None
         )
-        return jsonify({"response": msg})
-
-    source_filter = (
-        [fid for fid in file_ids if fid in registry and fid in indexed_file_ids]
-        if file_ids else None
-    )
-    if not source_filter and department:
-        db = SessionLocal()
-        doc_file_ids = [
-            r[0] for r in db.query(Document.file_id)
-            .filter(Document.user_key == user_key, Document.department == department)
-            .all()
-        ]
-        db.close()
-        source_filter = [fid for fid in doc_file_ids if fid in indexed_file_ids]
-
-    if file_ids and not source_filter:
-        return jsonify({
-            "response": "The selected files are not indexed yet. Re-upload them to rebuild the index, or clear the selection and use files that are ready."
-        })
-
-    try:
-        top_chunks = store.search(
-            question, top_k=RAGConfig.TOP_K, source_filter=source_filter
-        )
-    except EmbeddingServiceError as exc:
-        return jsonify({"error": str(exc)}), 503
-
-    if not top_chunks:
-        return jsonify({
-            "response": "Couldn't find relevant information in the indexed documents."
-        })
-
-    context = "\n\n".join(
-        f"--- Source: {c['source']} (chunk {c['chunk_index']}) ---\n{c['text']}"
-        for c in top_chunks
-    )
+        if not source_filter and department:
+            db = SessionLocal()
+            doc_file_ids = [
+                r[0] for r in db.query(Document.file_id)
+                .filter(Document.user_key == user_key, Document.department == department)
+                .all()
+            ]
+            db.close()
+            source_filter = [fid for fid in doc_file_ids if fid in indexed_file_ids]
+        try:
+            top_chunks = store.search(
+                question, top_k=RAGConfig.TOP_K, source_filter=source_filter
+            )
+        except EmbeddingServiceError:
+            top_chunks = []
+        if top_chunks:
+            context = "\n\n".join(
+                f"--- Source: {c['source']} (chunk {c['chunk_index']}) ---\n{c['text']}"
+                for c in top_chunks
+            )
 
     recent = history[-(MAX_HISTORY_TURNS * 2):]
     history_block = ""
@@ -405,8 +390,88 @@ def api_chat_stream():
                 lines.append(f"{role}: {content}")
         if lines:
             history_block = "CONVERSATION HISTORY:\n" + "\n".join(lines) + "\n\n"
+    history_for_tools = [{"role": msg["role"], "content": msg["content"]} for msg in recent] if recent else None
 
-    prompt = f"""You are CEAP for Schools, an expert school document analyst AI.
+    system_prompt = SYSTEM_PROMPT
+    if agent_scope:
+        system_prompt = f"You are an AI agent with the following role and scope: {agent_scope}\n\n{system_prompt}"
+
+    tool_text = ""
+    tool_calls = []
+    if context:
+        doc_context = (
+            "RELEVANT DOCUMENTS (use these as your primary source of truth):\n"
+            f"{context}\n\n"
+        )
+    else:
+        doc_context = ""
+    try:
+        result = generate_answer_with_tools(
+            system_prompt=system_prompt,
+            user_message=f"{doc_context}{history_block}\n\nUser question: {question}",
+            tool_defs=tools_for_context(department, agent_scope),
+            history=history_for_tools,
+        )
+        tool_calls = result.get("tool_calls", [])
+        tool_text = result.get("text", "")
+        if tool_calls:
+            tool_summary = "\n".join(
+                f"- {tc['name']}({json.dumps(tc.get('args', {}))}) -> "
+                f"{json.dumps(tc['result'].get('data', tc['result']))[:600]}"
+                for tc in tool_calls
+            )
+            synthesis = generate_answer_with_tools(
+                system_prompt=system_prompt,
+                user_message=(
+                    f"{doc_context}"
+                    f"TOOL RESULTS:\n{tool_summary}\n\n"
+                    f"{history_block}User question: {question}\n\n"
+                    "Answer based on the tool results and documents above. "
+                    "If they don't answer the question, say so clearly."
+                ),
+                tool_defs=[],
+                history=history_for_tools,
+            )
+            tool_text = synthesis.get("text") or tool_summary
+    except GeminiServiceError as exc:
+        tool_text = ""
+
+    source_payload = _build_source_payload(top_chunks, registry)
+    full_response = []
+    sid = chat_session["session_id"]
+
+    def generate():
+        if tool_text:
+            yield f"event: token\ndata: {json.dumps(tool_text)}\n\n"
+            answer = tool_text
+            append_chat_message(user_key, "user", question, session_id=sid)
+            assistant_msg_id = append_chat_message(user_key, "assistant", answer, sources=source_payload, session_id=sid)
+            suggestions = []
+            try:
+                suggestions = generate_followup_suggestions(question, answer)
+            except Exception:
+                suggestions = []
+            yield f"event: done\ndata: {json.dumps({
+                'response': answer,
+                'sources': source_payload,
+                'chunks_used': len(top_chunks),
+                'session_id': sid,
+                'suggestions': suggestions,
+                'message_id': assistant_msg_id,
+                'tool_calls': tool_calls,
+            })}\n\n"
+            return
+
+        if not top_chunks:
+            msg = (
+                "Your saved files are not searchable right now. Re-upload them to rebuild the index, then ask again."
+                if registry else
+                "No documents indexed yet. Upload local files or import from OneDrive first."
+            )
+            yield f"event: done\ndata: {json.dumps({'response': msg, 'sources': [], 'chunks_used': 0, 'session_id': sid})}\n\n"
+            return
+
+        prompt = f"""You are CEAP for Schools, an expert school document analyst AI.
 
 {history_block}DOCUMENT EXCERPTS (use these as your primary source of truth):
 {context}
@@ -422,11 +487,6 @@ CURRENT QUESTION: {question}
 
 ANSWER:"""
 
-    source_payload = _build_source_payload(top_chunks, registry)
-    full_response = []
-    sid = chat_session["session_id"]
-
-    def generate():
         saw_first_token = False
         try:
             for token in generate_answer_stream(prompt):

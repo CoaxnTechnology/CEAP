@@ -113,9 +113,11 @@ export default function Compliance() {
         setPlanModal(true)
       } else {
         setPlanError('No plan returned')
+        setPlanModal(true)
       }
-    } catch {
-      setPlanError('Failed to generate plan')
+    } catch (err) {
+      setPlanError(err.message || 'Failed to generate plan')
+      setPlanModal(true)
     }
     setPlanning(false)
   }
