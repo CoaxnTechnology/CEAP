@@ -414,7 +414,15 @@ export function AppProvider({ children }) {
     if (!state.isAuthenticated) return
     let cancelled = false
     fetch('/api/notifications')
-      .then((res) => (res.ok ? res.json() : null))
+      .then((res) => {
+        // Session expired or server restarted — force logout instead of showing a dead app
+        if (res.status === 401) {
+          dispatch({ type: 'LOGOUT' })
+          localStorage.removeItem(STORAGE_KEY)
+          return null
+        }
+        return res.ok ? res.json() : null
+      })
       .then((data) => {
         if (data && !cancelled) {
           dispatch({ type: 'SET_NOTIFICATIONS', payload: data.notifications || [] })

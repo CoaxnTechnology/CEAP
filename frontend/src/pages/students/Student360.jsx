@@ -810,7 +810,6 @@ export default function Student360() {
           </div>
         </Modal>
       )}
-      <style>{`.field{width:100%;border-radius:.5rem;border:1px solid #e2e8f0;background:#f8fafc;padding:.5rem .75rem;font-size:.875rem;outline:none}.field:focus{border-color:#627d98;background:#fff}`}</style>
     </>
   )
 }

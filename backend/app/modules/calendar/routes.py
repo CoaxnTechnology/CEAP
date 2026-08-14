@@ -1,8 +1,8 @@
 import hashlib
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, session
 from app.auth_helpers import login_required
 from app.db import SessionLocal
-from app.models import User, CalendarEvent
+from app.models import Notification, User, CalendarEvent
 
 calendar_bp = Blueprint("calendar", __name__)
 
@@ -63,6 +63,19 @@ def create_event():
             status=body.get("status", "Upcoming"),
         )
         db.add(ev)
+        dept = (body.get("type") or "Meeting").strip().lower()
+        dept_users = db.query(User).filter(
+            User.status == "active",
+            User.department.ilike(dept),
+        ).all()
+        for u in dept_users:
+            db.add(Notification(
+                user_email=u.email,
+                type="event",
+                title=f"New {body.get('type') or 'Meeting'} event",
+                message=f"{title} on {body.get('date', '')} {body.get('time', '')}",
+                link="/calendar",
+            ))
         db.commit()
         db.refresh(ev)
         return jsonify({

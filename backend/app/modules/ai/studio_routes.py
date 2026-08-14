@@ -5,7 +5,7 @@ from app.db import SessionLocal
 from app.models import DocumentTemplate, AIDraft, User, Student
 from app.services.rag import get_store, get_registry, _user_key
 from .routes import _build_source_payload
-from app.services.gemini import generate_answer, GeminiServiceError
+from app.services.groq_service import generate_answer, GeminiServiceError
 from app.services.notification_service import create_notification
 from app.config import RAGConfig
 

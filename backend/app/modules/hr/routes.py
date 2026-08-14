@@ -18,10 +18,11 @@ from app.models import (
     Notification,
     User,
 )
-from app.services.gemini import (
+from app.services.groq_service import (
     GeminiServiceError,
     generate_answer,
     generate_recommendations,
+    _cached_generate_recommendations,
 )
 from app.services.rag import _user_key
 from app.services.workflow_engine import process_approval
@@ -218,7 +219,7 @@ def overview():
             } for r in open_reqs],
             "staff": staff,
             "leaveRequests": [_leave_status(l, name_by_email) for l in leaves],
-            "insights": generate_recommendations(
+            "insights": _cached_generate_recommendations(
                 (
                     f"Headcount: {headcount} (on leave: {len(on_leave)}).\n"
                     f"Open roles: {[f'{r.title} ({r.department})' for r in open_reqs]}.\n"
@@ -282,7 +283,7 @@ def decide_leave(leave_id):
         requester_name = user.full_name or user.email if user else leave.user_email
 
         db.add(ActivityLog(
-            user_email=user_key,
+            user_email=approver_email,
             action="approve",
             resource_type="leave",
             resource_id=leave_id,

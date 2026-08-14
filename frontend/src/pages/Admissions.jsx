@@ -305,8 +305,6 @@ export default function Admissions() {
           </div>
         </form>
       </Modal>
-
-      <style>{`.field{width:100%;border-radius:.5rem;border:1px solid #e2e8f0;background:#f8fafc;padding:.55rem .75rem;font-size:.875rem;outline:none}.field:focus{border-color:#7c3aed;background:#fff;box-shadow:0 0 0 2px #ddd6fe}`}</style>
     </div>
   )
 }

@@ -31,6 +31,11 @@ export default function SchoolMemory() {
       .finally(() => setLoading(false))
   }
 
+  const reindex = () => {
+    fetchMemories()
+    toast('Memory re-indexed', 'success')
+  }
+
   useEffect(() => fetchMemories(), [])
 
   const filtered = useMemo(() => {
@@ -59,8 +64,8 @@ export default function SchoolMemory() {
         title="School Memory"
         subtitle="Every meeting, decision, policy, discussion, and approval — searchable forever."
         actions={
-          <Button size="sm" variant="secondary" onClick={fetchMemories}>
-            <RefreshCw className="h-3.5 w-3.5" /> Refresh
+          <Button size="sm" variant="secondary" onClick={reindex}>
+            <RefreshCw className="h-3.5 w-3.5" /> Re-index
           </Button>
         }
       />

@@ -14,11 +14,15 @@ export default function Tasks() {
   const [showNew, setShowNew] = useState(false)
   const [form, setForm] = useState({ title: '', assignee: '', workspace: 'general', priority: 'medium' })
   const [saving, setSaving] = useState(false)
+  const [staff, setStaff] = useState([])
 
   useEffect(() => {
     api('/api/tasks')
       .then((r) => setItems(r.tasks))
       .catch(() => setItems(seedTasks))
+    api('/api/staff')
+      .then((users) => setStaff(users || []))
+      .catch(() => setStaff([]))
   }, [])
 
   async function complete(id) {
@@ -122,12 +126,18 @@ export default function Tasks() {
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-slate-600">Assignee</label>
-            <input
+            <select
               className={field}
               value={form.assignee}
               onChange={(e) => setForm({ ...form, assignee: e.target.value })}
-              placeholder="e.g. Rahul Mehta"
-            />
+            >
+              <option value="">Select a user</option>
+              {staff
+                .filter((u) => u.status !== 'disabled')
+                .map((u) => (
+                  <option key={u.email} value={u.full_name || u.email}>{u.full_name || u.email}</option>
+                ))}
+            </select>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>

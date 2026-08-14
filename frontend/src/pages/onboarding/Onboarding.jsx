@@ -650,23 +650,7 @@ export default function Onboarding() {
         </Card>
       </div>
 
-      <style>{`
-        .field {
-          width: 100%;
-          border-radius: 0.5rem;
-          border: 1px solid #e2e8f0;
-          background: #f8fafc;
-          padding: 0.55rem 0.75rem;
-          font-size: 0.875rem;
-          outline: none;
-        }
-        .field:focus {
-          border-color: #627d98;
-          background: #fff;
-          box-shadow: 0 0 0 2px #d9e2ec;
-        }
-      `}</style>
-    </div>
+      </div>
   )
 }
 

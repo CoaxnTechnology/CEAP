@@ -6,7 +6,7 @@ from flask import Blueprint, jsonify, request
 from app.auth_helpers import login_required
 from app.db import SessionLocal
 from app.models import ActivityLog, AdmissionApplication, Student, User
-from app.services.gemini import generate_recommendations
+from app.services.groq_service import generate_recommendations, _cached_generate_recommendations
 from app.services.rag import _user_key
 
 admissions_bp = Blueprint("admissions", __name__)
@@ -118,7 +118,7 @@ def overview():
         fallback_insights.append("Nursery pipeline light — recommend open house push")
         fallback_insights.append("Conversion 33% · top schools in city average 28%")
 
-        insights = generate_recommendations(
+        insights = _cached_generate_recommendations(
             (
                 f"Total applications: {len(pipeline)}.\n"
                 f"By stage: {by_stage}.\n"

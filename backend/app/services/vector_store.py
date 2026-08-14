@@ -137,6 +137,37 @@ class ChromaStore:
     def count(self) -> int:
         return self._col.count()
 
+    def get_file_text(self, file_id: str) -> str:
+        col = self._col
+        if col.count() == 0:
+            return ""
+        try:
+            results = col.get(where={"file_id": file_id}, include=["documents", "metadatas"])
+        except Exception:
+            return ""
+        docs = results.get("documents") or []
+        metas = results.get("metadatas") or []
+        chunks = sorted(
+            ((m.get("chunk_index", 0), d) for m, d in zip(metas, docs) if isinstance(m, dict)),
+            key=lambda x: x[0],
+        )
+        parts = []
+        for i, (_, d) in enumerate(chunks):
+            if i == 0:
+                parts.append(d)
+                continue
+            prev = parts[-1]
+            overlap = RAGConfig.CHUNK_OVERLAP
+            tail = prev[-overlap:]
+            if tail and d.startswith(tail):
+                parts.append(d[overlap:])
+            elif tail and tail.strip() and d.strip().startswith(tail.strip()):
+                idx = d.find(tail.strip())
+                parts.append(d[idx + len(tail.strip()):])
+            else:
+                parts.append("\n\n" + d)
+        return "".join(p for p in parts if p)
+
     def indexed_file_ids(self) -> set[str]:
         try:
             key = f"idx_ids_{self.user_key}"

@@ -160,6 +160,16 @@ def api_reindex():
         from app.services.file_parser import extract_text_from_bytes
 
         token = session.get(("od_token" if source == "onedrive" else "gd_token"))
+        if not token and source == "onedrive":
+            from app.db import SessionLocal
+            from app.models import User
+            db = SessionLocal()
+            try:
+                u = db.query(User).filter(User.email == session.get("user", "")).first()
+                if u and u.od_token:
+                    token = u.od_token
+            finally:
+                db.close()
         if token:
             try:
                 if source == "onedrive":

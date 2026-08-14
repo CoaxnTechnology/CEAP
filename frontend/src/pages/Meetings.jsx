@@ -180,7 +180,6 @@ export default function Meetings() {
             />
           </Field>
         </div>
-        <style>{`.field{width:100%;border-radius:.5rem;border:1px solid #e2e8f0;padding:.5rem .75rem;font-size:.875rem;outline:none}.field:focus{border-color:#627d98;box-shadow:0 0 0 2px #d9e2ec}`}</style>
       </Modal>
 
       <Modal

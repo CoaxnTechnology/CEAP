@@ -22,12 +22,57 @@ from app.services.persistence import get_document_by_source_ref
 from app.services.vector_store import EmbeddingServiceError
 from app.services.rag import current_user_key, register_and_index_async
 from app.services.classifier import classify
+from app.db import SessionLocal
+from app.models import User
 import logging
 
 log = logging.getLogger("cloud_import")
 
 onedrive_bp = Blueprint("onedrive", __name__)
 gdrive_bp = Blueprint("gdrive", __name__)
+
+
+def _sync_od_from_db():
+    """Restore OneDrive tokens from DB if the (possibly expired) session lacks them."""
+    email = session.get("user")
+    if not email or session.get("od_token"):
+        return
+    db = SessionLocal()
+    try:
+        u = db.query(User).filter(User.email == email).first()
+        if u and u.od_token:
+            session["od_token"] = u.od_token
+            if u.od_cache:
+                session["od_cache"] = u.od_cache
+            if u.od_user:
+                session["od_user"] = u.od_user
+            if u.od_email:
+                session["od_email"] = u.od_email
+    finally:
+        db.close()
+
+
+def _persist_od(db, email, token, cache, user, mail):
+    """Store OneDrive tokens on the user row so the connection survives session expiry."""
+    u = db.query(User).filter(User.email == email).first()
+    if not u:
+        return
+    u.od_token = token or u.od_token
+    u.od_cache = cache or u.od_cache
+    u.od_user = user or u.od_user
+    u.od_email = mail or u.od_email
+    db.commit()
+
+
+def _clear_od(db, email):
+    u = db.query(User).filter(User.email == email).first()
+    if not u:
+        return
+    u.od_token = ""
+    u.od_cache = ""
+    u.od_user = ""
+    u.od_email = ""
+    db.commit()
 
 
 def run_cloud_import(token: str, items: list, source: str, **download_kwargs):
@@ -193,6 +238,11 @@ def onedrive_callback():
     session["od_token"] = token
     session["od_user"] = od_user
     session["od_email"] = od_email
+    db = SessionLocal()
+    try:
+        _persist_od(db, session.get("user", ""), token, cache.serialize(), od_user, od_email)
+    finally:
+        db.close()
     target = session.pop("od_redirect", None) or url_for("auth.catch_all", path="admin")
     return redirect(
         f"{target}?od_connected=1&od_name={od_user}&od_email={od_email}"
@@ -207,6 +257,11 @@ def onedrive_disconnect():
     session.pop("od_cache", None)
     session.pop("od_user", None)
     session.pop("od_email", None)
+    db = SessionLocal()
+    try:
+        _clear_od(db, session.get("user", ""))
+    finally:
+        db.close()
     if request.method == "GET":
         return redirect(url_for("auth.catch_all", path="admin"))
     return jsonify({"success": True})
@@ -215,6 +270,7 @@ def onedrive_disconnect():
 @onedrive_bp.route("/api/onedrive/status")
 @login_required
 def onedrive_status():
+    _sync_od_from_db()
     return jsonify(
         {
             "enabled": OneDriveConfig.is_enabled(),
@@ -228,6 +284,7 @@ def onedrive_status():
 @onedrive_bp.route("/api/onedrive/files")
 @login_required
 def onedrive_files():
+    _sync_od_from_db()
     token, new_cache = get_fresh_token(session.get("od_cache"), session.get("od_token"))
     if new_cache:
         session["od_cache"] = new_cache
@@ -244,6 +301,7 @@ def onedrive_files():
 @onedrive_bp.route("/api/onedrive/import", methods=["POST"])
 @login_required
 def onedrive_import():
+    _sync_od_from_db()
     token, new_cache = get_fresh_token(session.get("od_cache"), session.get("od_token"))
     if new_cache:
         session["od_cache"] = new_cache

@@ -12,7 +12,11 @@ export default function DocumentDetail() {
   const location = useLocation()
   const navigate = useNavigate()
   const { toast } = useApp()
-  const [doc, setDoc] = useState(location.state?.doc || null)
+  const [doc, setDoc] = useState(
+    location.state?.doc
+      ? { ...location.state.doc, updated: location.state.doc.updated || location.state.doc.lastUpdated }
+      : null
+  )
   const [loading, setLoading] = useState(!doc)
 
   useEffect(() => {
@@ -72,7 +76,6 @@ ${doc.citation ? `Citation: ${doc.citation}` : ''}
 ${doc.owner ? `Owner: ${doc.owner}` : ''}
 ${doc.updated ? `Last updated: ${doc.updated}` : ''}
 `
-
   return (
     <div className="mx-auto max-w-4xl space-y-6">
       <button

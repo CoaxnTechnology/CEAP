@@ -5,6 +5,8 @@ from docx import Document as DocxDocument
 from pptx import Presentation
 import pandas as pd
 
+pd.set_option("display.max_colwidth", None)
+
 SUPPORTED_EXTS = {".pdf", ".docx", ".pptx", ".xlsx", ".xls", ".csv", ".txt"}
 
 

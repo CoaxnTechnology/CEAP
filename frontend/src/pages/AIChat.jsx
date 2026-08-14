@@ -117,6 +117,7 @@ export default function AIChat() {
     .filter((c, i, arr) => arr.findIndex((x) => (x.id || x.file_id) === (c.id || c.file_id)) === i)
 
   function openSource(s) {
+    toast(`Viewing ${s.name || s.source || 'citation'}`, 'info')
     navigate(`/document/${s.file_id || s.id || ''}`, {
       state: {
         doc: {

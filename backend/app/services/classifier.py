@@ -1,4 +1,4 @@
-from app.services.gemini import generate_answer, GeminiServiceError
+from app.services.groq_service import generate_answer, GeminiServiceError
 
 DEPARTMENTS = [
     "HR", "Admin", "Finance", "Academic", "Compliance",

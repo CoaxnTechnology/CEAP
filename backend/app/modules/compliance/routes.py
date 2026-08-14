@@ -7,7 +7,7 @@ from sqlalchemy import desc
 from app.auth_helpers import login_required
 from app.db import SessionLocal
 from app.models import ComplianceEvidence, ActivityLog
-from app.services.gemini import generate_answer, GeminiServiceError
+from app.services.groq_service import generate_answer, GeminiServiceError
 from app.services.rag import _user_key, get_registry, register_and_index
 from app.services.classifier import classify
 from app.services.compliance_classifier import classify_compliance, COMPLIANCE_CATEGORIES, detect_compliance_status

@@ -11,7 +11,7 @@ from app.models import (
     MonthlyCollection,
     User,
 )
-from app.services.gemini import generate_recommendations
+from app.services.groq_service import generate_recommendations, _cached_generate_recommendations
 from app.services.rag import _user_key
 from app.services.workflow_engine import create_approval_request
 from app.modules.settings.routes import get_targets
@@ -81,7 +81,7 @@ def overview():
             f"AI: Offer 2-installment plans to {overdue_60} families with >60 days overdue.",
         ]
 
-        insights = generate_recommendations(
+        insights = _cached_generate_recommendations(
             (
                 f"MTD collections: ₹{mtd_collected / 100000:.1f}L vs target ₹{mtd_target / 100000:.0f}L.\n"
                 f"Outstanding: ₹{outstanding / 100000:.1f}L across {families} families "

@@ -50,13 +50,10 @@ export default function Settings() {
     dispatch({ type: 'UPDATE_SCHOOL', payload: { [field]: value } })
   }
 
-  function resetDemo() {
-    if (window.confirm('Reset all prototype data and sign out?')) {
-      dispatch({ type: 'RESET_DEMO' })
-      logout()
-      navigate('/login')
-      toast('Demo data reset', 'info')
-    }
+  function signOut() {
+    logout()
+    navigate('/login')
+    toast('Signed out', 'info')
   }
 
   return (
@@ -96,21 +93,6 @@ export default function Settings() {
           checked={darkMode}
           onChange={() => dispatch({ type: 'SET_DARK_MODE', payload: !darkMode })}
         />
-        <div>
-          <label className="mb-1.5 block text-xs font-medium text-slate-500">Language</label>
-          <select
-            value={preferences.language}
-            onChange={(e) => {
-              dispatch({ type: 'UPDATE_PREFERENCES', payload: { language: e.target.value } })
-              toast(`Language: ${e.target.value}`, 'success')
-            }}
-            className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm outline-none focus:border-navy-400"
-          >
-            <option>English</option>
-            <option>Hindi</option>
-            <option>Kannada</option>
-          </select>
-        </div>
       </Card>
 
       {school && (
@@ -180,16 +162,14 @@ export default function Settings() {
       </Card>
 
       <Card>
-        <h2 className="text-sm font-semibold text-danger-600">Danger zone</h2>
+        <h2 className="text-sm font-semibold text-danger-600">Sign out</h2>
         <p className="mt-1 text-xs text-slate-500">
-          Reset clears local prototype session data and returns to login.
+          Sign out of this session and return to the login page.
         </p>
-        <Button className="mt-4" variant="dangerOutline" onClick={resetDemo}>
-          Reset demo data & sign out
+        <Button className="mt-4" variant="dangerOutline" onClick={signOut}>
+          Sign out
         </Button>
       </Card>
-
-      <style>{`.field{width:100%;border-radius:.5rem;border:1px solid #e2e8f0;background:#f8fafc;padding:.55rem .75rem;font-size:.875rem;outline:none}.field:focus{border-color:#627d98;background:#fff}`}</style>
     </div>
   )
 }

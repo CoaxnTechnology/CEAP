@@ -18,6 +18,7 @@ const [q, setQ] = useState('')
   const [loading, setLoading] = useState(true)
    const [deleteId, setDeleteId] = useState(null)
   const [viewCard, setViewCard] = useState(null)
+  const [cardContent, setCardContent] = useState(null)
   const [deptModal, setDeptModal] = useState(null)
   const [chatDepartment, setChatDepartment] = useState(null)
   const [chatMsgs, setChatMsgs] = useState([])
@@ -47,6 +48,17 @@ const [q, setQ] = useState('')
       if (debounceRef.current) clearTimeout(debounceRef.current)
     }
   }, [q, fetchCards])
+
+   async function openCard(doc) {
+    setViewCard(doc)
+    setCardContent(null)
+    try {
+      const data = await api(`/api/knowledge/cards/${doc.id}/content`)
+      setCardContent(data.text || '')
+    } catch {
+      setCardContent('')
+    }
+  }
 
    async function handleDelete() {
     if (!deleteId) return
@@ -166,7 +178,7 @@ const [q, setQ] = useState('')
                   <div
                     key={doc.id}
                     className="flex items-center gap-3 py-2.5 first:pt-0 last:pb-0 hover:bg-slate-50 rounded-lg cursor-pointer"
-                    onClick={(e) => { e.stopPropagation(); setViewCard(doc) }}
+                    onClick={(e) => { e.stopPropagation(); openCard(doc) }}
                   >
                     <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-50 text-slate-400">
                       <Library className="h-4 w-4" />
@@ -233,7 +245,17 @@ const [q, setQ] = useState('')
               <StatusBadge status={viewCard.status} />
               <span className="text-xs text-slate-400">{viewCard.type} · {viewCard.dept}</span>
             </div>
-            <p className="text-sm leading-relaxed text-slate-600">{viewCard.summary}</p>
+            <div className="max-h-[60vh] overflow-y-auto rounded-lg border border-slate-100 bg-slate-50 p-4">
+              {cardContent === null ? (
+                <div className="flex items-center justify-center py-8">
+                  <div className="h-5 w-5 animate-spin rounded-full border-2 border-navy-200 border-t-navy-700" />
+                </div>
+              ) : cardContent ? (
+                <p className="whitespace-pre-wrap font-mono text-xs leading-relaxed text-slate-700">{cardContent}</p>
+              ) : (
+                <p className="text-sm text-slate-400">No content available for this item.</p>
+              )}
+            </div>
             <div className="flex items-center gap-4 mt-4 text-xs text-slate-400">
               <span className="inline-flex items-center gap-1"><Link2 className="h-3 w-3" /> {viewCard.relations} relations</span>
               <span>Updated {viewCard.updated}</span>

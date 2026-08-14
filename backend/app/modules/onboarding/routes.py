@@ -167,6 +167,8 @@ def onboarding_status():
                     "id": school.id,
                     "name": school.name,
                     "code": school.code,
+                    "board": school.board,
+                    "academicYear": school.academic_year,
                 } if school else None,
             })
         return jsonify({
@@ -216,6 +218,8 @@ def create_school():
             phone=school_data.get("phone", "").strip(),
             email=school_data.get("email", "").strip(),
             website=school_data.get("website", "").strip(),
+            board=school_data.get("board", "").strip(),
+            academic_year=school_data.get("academicYear", "").strip(),
             status="active",
             created_at=time.time(),
         )
@@ -359,8 +363,16 @@ def list_role_templates():
 
 @onboarding_bp.route("/connectors/onedrive", methods=["GET"])
 def onedrive_status():
-    """Check OneDrive connection status from session."""
+    """Check OneDrive connection status from session (falling back to persisted user row)."""
     od_token = session.get("od_token")
+    if not od_token:
+        db = SessionLocal()
+        try:
+            u = db.query(User).filter(User.email == session.get("user", "")).first()
+            if u:
+                od_token = u.od_token
+        finally:
+            db.close()
     connected = bool(od_token)
     return jsonify({
         "id": "onedrive",

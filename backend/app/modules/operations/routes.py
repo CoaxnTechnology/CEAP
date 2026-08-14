@@ -5,7 +5,7 @@ from flask import Blueprint, jsonify, request, session
 
 from app.auth_helpers import login_required
 from app.db import SessionLocal
-from app.models import ApprovalRequest, Ticket
+from app.models import ApprovalRequest, Notification, Ticket, User
 
 ops_bp = Blueprint("operations", __name__)
 
@@ -80,6 +80,17 @@ def create_task():
             assignee=(data.get("assignee") or "").strip(),
         )
         db.add(t)
+        assignee = (data.get("assignee") or "").strip()
+        if assignee:
+            user = db.query(User).filter(User.full_name == assignee).first()
+            target = user.email if user else assignee
+            db.add(Notification(
+                user_email=target,
+                type="task",
+                title="New task assigned",
+                message=f"{session.get('user') or 'System'} assigned you: {title}",
+                link="/tasks",
+            ))
         db.commit()
         db.refresh(t)
         return jsonify({"success": True, "task": _serialize_ticket(t)}), 201
@@ -134,6 +145,14 @@ def decide_approval(request_id):
             return jsonify({"error": "Request not found"}), 404
         req.status = decision
         req.updated_at = time.time()
+        if db.query(User).filter(User.email == req.requester).first():
+            db.add(Notification(
+                user_email=req.requester,
+                type="approval",
+                title=f"Approval {decision}",
+                message=f"Your {req.workflow_type} request was {decision} by {session.get('user') or 'the approver'}.",
+                link="/approvals",
+            ))
         db.commit()
         db.refresh(req)
         return jsonify({"success": True, "id": req.id, "status": decision})

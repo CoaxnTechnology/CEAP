@@ -19,7 +19,7 @@ from app.services.persistence import (
 from app.db import SessionLocal
 from app.models import Document
 from app.services.rag import get_store, get_registry, _user_key
-from app.services.gemini import GeminiServiceError, generate_answer, generate_answer_stream, generate_followup_suggestions, generate_answer_with_tools
+from app.services.groq_service import GeminiServiceError, generate_answer, generate_answer_stream, generate_followup_suggestions, generate_answer_with_tools
 from app.services.vector_store import EmbeddingServiceError
 from app.services.tools import tools_for_context
 

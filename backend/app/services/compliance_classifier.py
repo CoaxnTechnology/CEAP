@@ -1,6 +1,6 @@
 import re
 from datetime import datetime, timedelta
-from app.services.gemini import generate_answer, GeminiServiceError
+from app.services.groq_service import generate_answer, GeminiServiceError
 
 COMPLIANCE_CATEGORIES = [
     "Safeguarding",

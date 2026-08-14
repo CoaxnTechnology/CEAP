@@ -9,7 +9,7 @@ from app.models import (
     Ticket, ApprovalRequest, Notification, OfficeSupply, SupplyRequest,
     Visitor, CompanyAnnouncement, User, AccountingEntry, AuditDocument
 )
-from app.services.gemini import generate_answer
+from app.services.groq_service import generate_answer
 from app.services.rag import get_store, get_registry, _user_key
 from app.config import RAGConfig
 
@@ -1112,7 +1112,7 @@ def _generate_circular_draft(args: dict, user_email: str) -> dict:
         "Format: [School Name], [Date], subject line, body with clear sections, closing with principal's name."
     )
     try:
-        from app.services.gemini import generate_answer
+        from app.services.groq_service import generate_answer
         draft = generate_answer(prompt)
         return {
             "draft": draft or f"Circular draft about {topic} for {audience}",
@@ -1133,7 +1133,7 @@ def _search_school_policy(args: dict, user_email: str) -> dict:
         chunks = store.search(query, top_k=RAGConfig.TOP_K)
         if chunks:
             texts = "\n\n".join(f"{c['text']}" for c in chunks[:3])
-            from app.services.gemini import generate_answer
+            from app.services.groq_service import generate_answer
             answer = generate_answer(
                 f"You are a school policy expert. Answer using ONLY the provided policy documents:\n\n"
                 f"POLICY DOCUMENTS:\n{texts}\n\n"
@@ -1160,7 +1160,7 @@ def _get_academic_calendar(args: dict, user_email: str) -> dict:
         chunks = store.search(query, top_k=RAGConfig.TOP_K)
         if chunks:
             texts = "\n\n".join(f"{c['text']}" for c in chunks[:3])
-            from app.services.gemini import generate_answer
+            from app.services.groq_service import generate_answer
             summary = generate_answer(f"Summarize the academic calendar information:\n\n{texts}")
             return {
                 "found": True,
@@ -1183,7 +1183,7 @@ def _find_exam_schedule(args: dict, user_email: str) -> dict:
         chunks = store.search(query, top_k=RAGConfig.TOP_K)
         if chunks:
             texts = "\n\n".join(f"{c['text']}" for c in chunks[:3])
-            from app.services.gemini import generate_answer
+            from app.services.groq_service import generate_answer
             summary = generate_answer(f"Extract the exam schedule from these documents:\n\n{texts}")
             return {
                 "found": True,
@@ -1230,7 +1230,7 @@ def _generate_report_card(args: dict, user_email: str) -> dict:
         "Keep it constructive, encouraging, and professional (2-3 sentences)."
     )
     try:
-        from app.services.gemini import generate_answer
+        from app.services.groq_service import generate_answer
         comment = generate_answer(prompt)
         return {
             "comment": comment or f"Report card comment for {student_name} - {subject}",

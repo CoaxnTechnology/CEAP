@@ -18,10 +18,10 @@ export default function Finance() {
   const navigate = useNavigate()
   const { toast, dispatch } = useApp()
   const [data, setData] = useState(null)
-  const [riskOpen, setRiskOpen] = useState(false)
   const [waiver, setWaiver] = useState(null)
   const [collections, setCollections] = useState(null)
   const [savingCol, setSavingCol] = useState(false)
+  const [riskClass, setRiskClass] = useState('All')
 
   const load = () =>
     api('/api/finance/overview')
@@ -183,7 +183,7 @@ export default function Finance() {
       </div>
 
       <div className="grid gap-4 sm:grid-cols-3">
-        <Card className="card-hover" onClick={() => setRiskOpen(true)}>
+        <Card className="card-hover" onClick={() => navigate('/students')}>
           <p className="text-xs font-semibold uppercase tracking-wider text-slate-400">Action</p>
           <p className="mt-2 font-semibold text-slate-900">Open student fee risk</p>
           <p className="mt-1 text-xs text-slate-500">Students for family-level follow-up</p>
@@ -234,14 +234,26 @@ export default function Finance() {
         </div>
       </Modal>
 
-      <Modal
-        open={riskOpen}
-        onClose={() => setRiskOpen(false)}
+      <Section
         title="Student fee risk"
-        size="lg"
+        action={
+          <select
+            value={riskClass}
+            onChange={(e) => setRiskClass(e.target.value)}
+            className="field sm:w-40"
+          >
+            <option value="All">All classes</option>
+            {[...new Set((data.riskFamilies || []).map((s) => s.className))].map((c) => (
+              <option key={c}>{c}</option>
+            ))}
+          </select>
+        }
       >
-        <ul className="divide-y divide-slate-50">
-          {data.riskFamilies.map((s) => (
+        <div className="mx-auto max-w-2xl">
+          <ul className="divide-y divide-slate-50">
+            {(data.riskFamilies || [])
+              .filter((s) => riskClass === 'All' || s.className === riskClass)
+              .map((s) => (
             <li key={s.studentName} className="flex items-center justify-between gap-3 py-2.5">
               <div className="min-w-0">
                 <p className="text-sm font-medium text-slate-800">
@@ -264,8 +276,9 @@ export default function Finance() {
               </div>
             </li>
           ))}
-        </ul>
-      </Modal>
+          </ul>
+        </div>
+      </Section>
 
       <Modal
         open={!!waiver}
@@ -306,8 +319,6 @@ export default function Finance() {
           </div>
         </form>
       </Modal>
-
-      <style>{`.field{width:100%;border-radius:.5rem;border:1px solid #e2e8f0;background:#f8fafc;padding:.55rem .75rem;font-size:.875rem;outline:none}.field:focus{border-color:#b45309;background:#fff;box-shadow:0 0 0 2px #fed7aa}`}</style>
     </div>
   )
 }

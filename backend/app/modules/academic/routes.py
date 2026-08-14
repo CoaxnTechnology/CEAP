@@ -5,7 +5,7 @@ from flask import Blueprint, jsonify, request
 from app.auth_helpers import login_required
 from app.db import SessionLocal
 from app.models import Assessment, ClassAttendance, CoverageEntry, Student, User
-from app.services.gemini import generate_recommendations
+from app.services.groq_service import generate_recommendations, _cached_generate_recommendations
 
 academic_bp = Blueprint("academic", __name__)
 
@@ -200,7 +200,7 @@ def overview():
             fallback_insights.append(f"{high} student(s) flagged high risk — coordinate intervention.")
         fallback_insights.append("Academic leadership intervenes early — not a gradebook.")
 
-        insights = generate_recommendations(
+        insights = _cached_generate_recommendations(
             (
                 f"Average attendance: {avg_attendance}%.\n"
                 f"Assessments pending grading: {assessments}.\n"

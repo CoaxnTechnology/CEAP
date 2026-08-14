@@ -6,7 +6,7 @@ from sqlalchemy import desc
 from app.auth_helpers import login_required
 from app.db import SessionLocal
 from app.models import KnowledgeCard, Document, ActivityLog, RepositoryDocument, Department, Student
-from app.services.rag import _user_key
+from app.services.rag import _user_key, get_store
 
 knowledge_bp = Blueprint("knowledge", __name__)
 
@@ -72,6 +72,31 @@ def list_cards():
     combined = doc_cards + card_results
     combined.sort(key=lambda x: x.get("updated", ""), reverse=True)
     return jsonify(combined)
+
+
+@knowledge_bp.route("/api/knowledge/cards/<card_id>/content", methods=["GET"])
+@login_required
+def card_content(card_id):
+    user_key = _user_key()
+    db = SessionLocal()
+    if card_id.startswith("doc_"):
+        file_id = card_id[4:]
+        doc = db.query(Document).filter(
+            Document.file_id == file_id, Document.user_key == user_key
+        ).first()
+        db.close()
+        if not doc:
+            return jsonify({"error": "Document not found"}), 404
+        text = get_store().get_file_text(file_id)
+        return jsonify({"title": doc.name, "text": text or doc.name, "type": "Document"})
+
+    card = db.query(KnowledgeCard).filter(
+        KnowledgeCard.id == card_id, KnowledgeCard.user_key == user_key
+    ).first()
+    db.close()
+    if not card:
+        return jsonify({"error": "Card not found"}), 404
+    return jsonify({"title": card.title, "text": card.summary or "", "type": card.card_type})
 
 
 @knowledge_bp.route("/api/knowledge/cards", methods=["POST"])

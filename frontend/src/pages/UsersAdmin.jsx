@@ -191,7 +191,6 @@ export default function UsersAdmin() {
             </select>
           </Field>
         </div>
-        <style>{`.field{width:100%;border-radius:.5rem;border:1px solid #e2e8f0;padding:.5rem .75rem;font-size:.875rem;outline:none}.field:focus{border-color:#627d98}`}</style>
       </Modal>
 
       <Modal open={!!tempPw} onClose={() => setTempPw(null)} title="Invitation created"
@@ -249,7 +248,6 @@ export default function UsersAdmin() {
                 <option>Suspended</option>
               </select>
             </Field>
-            <style>{`.field{width:100%;border-radius:.5rem;border:1px solid #e2e8f0;padding:.5rem .75rem;font-size:.875rem;outline:none}`}</style>
           </div>
         )}
       </Modal>

@@ -14,7 +14,12 @@ from app.models import (
     Student,
     User,
 )
-from app.services.gemini import generate_briefing, generate_recommendations
+from app.services.groq_service import (
+    generate_briefing,
+    generate_recommendations,
+    _cached_generate_briefing,
+    _cached_generate_recommendations,
+)
 from app.modules.settings.routes import get_targets
 
 executive_bp = Blueprint("executive", __name__)
@@ -120,7 +125,7 @@ def overview():
         fallback_bullets.append({"type": "info", "text": f"{interview} admissions applications awaiting interview"})
         fallback_bullets.append({"type": "ai", "text": "AI recommends parent outreach for top fee defaulters"})
 
-        briefing = generate_briefing(
+        briefing = _cached_generate_briefing(
             context,
             fallback={"summary": fallback_summary, "bullets": fallback_bullets},
         )
@@ -176,7 +181,7 @@ def overview():
                     else None
                 ),
             },
-            "recommendations": generate_recommendations(
+            "recommendations": _cached_generate_recommendations(
                 context,
                 fallback=[
                     f"Review fee waiver request from {a.requester}" for a in pending[:1]

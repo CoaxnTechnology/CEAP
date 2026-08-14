@@ -102,6 +102,14 @@ class User(Base):
     must_change_password = Column(Integer, default=0)
     is_admin = Column(Integer, default=0)
     created_at = Column(Float, default=_ts)
+    # Cloud connector persistence (OneDrive / Google Drive)
+    od_token = Column(Text, default="")
+    od_cache = Column(Text, default="")
+    od_user = Column(String(255), default="")
+    od_email = Column(String(255), default="")
+    gd_token = Column(Text, default="")
+    gd_user = Column(String(255), default="")
+    gd_email = Column(String(255), default="")
 
     school = relationship("School", backref="users")
 
