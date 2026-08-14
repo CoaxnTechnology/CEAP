@@ -12,6 +12,7 @@ services:
       - ./storage:/app/backend/storage
       - ./backend/app/storage:/app/backend/app/storage
       - ./backend/app/uploads:/app/backend/app/uploads
+      - flask_session:/app/backend/flask_session
     restart: unless-stopped
     depends_on:
       - postgres
@@ -28,3 +29,4 @@ services:
 
 volumes:
   pgdata:
+  flask_session:

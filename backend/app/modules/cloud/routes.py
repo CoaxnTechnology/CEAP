@@ -75,6 +75,43 @@ def _clear_od(db, email):
     db.commit()
 
 
+def _sync_gd_from_db():
+    """Restore Google Drive tokens from DB if the session lacks them."""
+    email = session.get("user")
+    if not email or session.get("gd_token"):
+        return
+    db = SessionLocal()
+    try:
+        u = db.query(User).filter(User.email == email).first()
+        if u and u.gd_token:
+            session["gd_token"] = u.gd_token
+            if u.gd_user:
+                session["gd_user"] = u.gd_user
+            if u.gd_email:
+                session["gd_email"] = u.gd_email
+    finally:
+        db.close()
+
+
+def _persist_gd(db, email, token, user, mail):
+    """Store Google Drive tokens on the user row so the connection survives session expiry."""
+    u = db.query(User).filter(User.email == email).first()
+    if not u:
+        return
+    u.gd_token = token or u.gd_token
+    u.gd_user = user or u.gd_user
+    u.gd_email = mail or u.gd_email
+    db.commit()
+
+
+def _clear_gd(db, email):
+    u = db.query(User).filter(User.email == email).first()
+    if not u:
+        return
+    u.gd_token = ""
+    u.gd_user = ""
+    u.gd_email = ""
+    db.commit()
 def run_cloud_import(token: str, items: list, source: str, **download_kwargs):
     """Shared cloud import: download -> extract -> classify -> index."""
     user_key = current_user_key()
@@ -364,6 +401,11 @@ def gdrive_callback():
     session["gd_user"] = gd_user
     session["gd_email"] = gd_email
     session["gd_expires"] = int(result.get("expires_in", 3600)) + 60
+    db = SessionLocal()
+    try:
+        _persist_gd(db, session.get("user", ""), token, gd_user, gd_email)
+    finally:
+        db.close()
     target = session.pop("gd_redirect", None) or url_for("auth.catch_all", path="admin")
     return redirect(
         f"{target}?gd_connected=1&gd_name={gd_user}&gd_email={gd_email}"
@@ -378,6 +420,11 @@ def gdrive_disconnect():
     session.pop("gd_user", None)
     session.pop("gd_email", None)
     session.pop("gd_expires", None)
+    db = SessionLocal()
+    try:
+        _clear_gd(db, session.get("user", ""))
+    finally:
+        db.close()
     if request.method == "GET":
         return redirect(url_for("auth.catch_all", path="admin"))
     return jsonify({"success": True})
@@ -386,6 +433,7 @@ def gdrive_disconnect():
 @gdrive_bp.route("/api/gdrive/status")
 @login_required
 def gdrive_status():
+    _sync_gd_from_db()
     return jsonify(
         {
             "enabled": GoogleDriveConfig.is_enabled(),
@@ -399,6 +447,7 @@ def gdrive_status():
 @gdrive_bp.route("/api/gdrive/files")
 @login_required
 def gdrive_files():
+    _sync_gd_from_db()
     token = session.get("gd_token")
     if not token:
         return jsonify({"error": "Google Drive not connected"}), 401
@@ -413,6 +462,7 @@ def gdrive_files():
 @gdrive_bp.route("/api/gdrive/import", methods=["POST"])
 @login_required
 def gdrive_import():
+    _sync_gd_from_db()
     token = session.get("gd_token")
     if not token:
         return jsonify({"error": "Google Drive not connected"}), 401
