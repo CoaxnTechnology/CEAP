@@ -35,6 +35,7 @@ You help school administrators, principals, teachers, and staff with:
 
 When the user asks about:
 - Staff matters (leave, attendance, policies, employee info, approvals) → use the appropriate tool
+- HR or leave policy questions (approval chains, leave types, entitlements) → ALWAYS call search_hr_policy first; do not answer from unrelated document excerpts
 - Finance (fee invoices, expenses, financial summaries) → use the appropriate tool
 - School admin (circulars, meetings, tickets, announcements) → use the appropriate tool
 - Document content → answer from the document excerpts provided
@@ -42,6 +43,41 @@ When the user asks about:
 Be concise and professional. Use markdown formatting for clarity.
 When you use a tool, explain what you did in a friendly way.
 For approvals, present clear Approve/Reject options when relevant."""
+
+
+def _resolve_chat_source_filter(
+    user_key: str,
+    file_ids: list,
+    department: str,
+    registry: dict,
+    indexed_file_ids: set,
+) -> list | None:
+    """Resolve which indexed files RAG may search.
+
+    Returns None to search all indexed docs, or a list of file_ids to restrict to.
+    An empty list means nothing matched — callers must not widen to a global search.
+    """
+    if file_ids:
+        return [fid for fid in file_ids if fid in registry and fid in indexed_file_ids]
+
+    if not department or department == "general":
+        return None
+
+    db = SessionLocal()
+    try:
+        base = db.query(Document.file_id).filter(Document.user_key == user_key)
+        dept_ids = [r[0] for r in base.filter(Document.department == department).all()]
+        if department == "hr":
+            policy_ids = [
+                r[0]
+                for r in base.filter(
+                    Document.name.ilike("%policy%") | Document.name.ilike("%leave%")
+                ).all()
+            ]
+            dept_ids = list(set(dept_ids + policy_ids))
+        return [fid for fid in dept_ids if fid in indexed_file_ids]
+    finally:
+        db.close()
 
 
 def _resolve_session(user_key: str, session_id: str | None):
@@ -195,13 +231,16 @@ def api_chat():
 
     context = ""
     if indexed_file_ids:
-        source_filter = (
-            [fid for fid in file_ids if fid in registry and fid in indexed_file_ids]
-            if file_ids else None
+        source_filter = _resolve_chat_source_filter(
+            user_key, file_ids, department, registry, indexed_file_ids
         )
         try:
-            top_chunks = store.search(
-                question, top_k=RAGConfig.TOP_K, source_filter=source_filter
+            top_chunks = (
+                []
+                if source_filter is not None and not source_filter
+                else store.search(
+                    question, top_k=RAGConfig.TOP_K, source_filter=source_filter
+                )
             )
             if top_chunks:
                 context = "\n\n".join(
@@ -354,22 +393,16 @@ def api_chat_stream():
     context = ""
     top_chunks = []
     if indexed_file_ids:
-        source_filter = (
-            [fid for fid in file_ids if fid in registry and fid in indexed_file_ids]
-            if file_ids else None
+        source_filter = _resolve_chat_source_filter(
+            user_key, file_ids, department, registry, indexed_file_ids
         )
-        if not source_filter and department:
-            db = SessionLocal()
-            doc_file_ids = [
-                r[0] for r in db.query(Document.file_id)
-                .filter(Document.user_key == user_key, Document.department == department)
-                .all()
-            ]
-            db.close()
-            source_filter = [fid for fid in doc_file_ids if fid in indexed_file_ids]
         try:
-            top_chunks = store.search(
-                question, top_k=RAGConfig.TOP_K, source_filter=source_filter
+            top_chunks = (
+                []
+                if source_filter is not None and not source_filter
+                else store.search(
+                    question, top_k=RAGConfig.TOP_K, source_filter=source_filter
+                )
             )
         except EmbeddingServiceError:
             top_chunks = []

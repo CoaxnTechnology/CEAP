@@ -7,7 +7,8 @@ from app.db import SessionLocal
 from app.models import (
     LeaveRequest, AttendanceLog, Invoice, Expense, Meeting, Asset,
     Ticket, ApprovalRequest, Notification, OfficeSupply, SupplyRequest,
-    Visitor, CompanyAnnouncement, User, AccountingEntry, AuditDocument
+    Visitor, CompanyAnnouncement, User, AccountingEntry, AuditDocument,
+    HRPolicy, Document,
 )
 from app.services.groq_service import generate_answer
 from app.services.rag import get_store, get_registry, _user_key
@@ -205,24 +206,75 @@ def _get_payslip(args: dict, user_email: str) -> dict:
         return {"found": False, "period": period, "message": "Please upload your payslip PDF documents first, then search again."}
 
 
+def _hr_policy_file_ids(user_key: str, store) -> list | None:
+    """File IDs for HR/leave policy documents; None means search all indexed docs."""
+    db = _db_session()
+    try:
+        rows = (
+            db.query(Document.file_id)
+            .filter(Document.user_key == user_key)
+            .filter(
+                (Document.department == "hr")
+                | Document.name.ilike("%policy%")
+                | Document.name.ilike("%leave%")
+            )
+            .all()
+        )
+        indexed = store.indexed_file_ids()
+        file_ids = [r[0] for r in rows if r[0] in indexed]
+        return file_ids if file_ids else None
+    finally:
+        db.close()
+
+
 def _search_hr_policy(args: dict, user_email: str) -> dict:
     query = args["query"]
     user_key = _user_key()
     store = get_store()
+
+    policy_sections = []
+    db = _db_session()
     try:
-        chunks = store.search(query, top_k=RAGConfig.TOP_K)
-        if chunks:
-            texts = "\n\n".join(f"{c['text']}" for c in chunks[:3])
-            answer = generate_answer(
-                f"You are an HR policy expert. Answer the following question using ONLY the provided policy documents:\n\n"
-                f"POLICY DOCUMENTS:\n{texts}\n\n"
-                f"QUESTION: {query}\n\n"
-                f"Provide a concise answer with reference to the specific policy."
+        policies = (
+            db.query(HRPolicy)
+            .filter(HRPolicy.user_key == user_key, HRPolicy.active == 1)
+            .order_by(HRPolicy.updated_at.desc())
+            .all()
+        )
+        for policy in policies:
+            rules = policy.rules_json or {}
+            routing = rules.get("approver_routing")
+            extra = f"\nApprover routing: {routing}" if routing else ""
+            policy_sections.append(
+                f"--- {policy.name} ({policy.category}) ---\n{policy.content}{extra}"
             )
+    finally:
+        db.close()
+
+    try:
+        source_filter = _hr_policy_file_ids(user_key, store)
+        chunks = store.search(query, top_k=RAGConfig.TOP_K, source_filter=source_filter)
+        doc_texts = "\n\n".join(f"{c['text']}" for c in chunks[:3]) if chunks else ""
+        if policy_sections:
+            doc_texts = "\n\n".join(policy_sections) + (
+                f"\n\n{doc_texts}" if doc_texts else ""
+            )
+
+        if doc_texts:
+            answer = generate_answer(
+                "You are an HR policy expert. Answer the following question using ONLY "
+                "the provided policy documents:\n\n"
+                f"POLICY DOCUMENTS:\n{doc_texts}\n\n"
+                f"QUESTION: {query}\n\n"
+                "Provide a concise answer with reference to the specific policy."
+            )
+            sources = [c.get("source", "") for c in chunks[:3]] if chunks else []
+            if policies:
+                sources = [p.name for p in policies] + sources
             return {
                 "found": True,
-                "answer": answer or texts[:500],
-                "sources": [c.get("source", "") for c in chunks[:3]],
+                "answer": answer or doc_texts[:500],
+                "sources": sources,
             }
         return {"found": False, "message": "No HR policy documents found. Upload your policy documents first."}
     except Exception as e:

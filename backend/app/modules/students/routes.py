@@ -492,17 +492,32 @@ def seed_documents_if_empty():
                 with open(leave_policy_path, "w", encoding="utf-8") as f:
                     f.write(leave_text)
             try:
-                register_and_index_for_user(
+                entry = register_and_index_for_user(
                     user_key=user_key,
                     name=leave_policy_name,
                     text=leave_text,
                     size=len(leave_text),
                     source="local",
                     source_ref="staff",
+                    department="hr",
                     file_path=leave_policy_path,
                 )
+                doc = db.query(Document).filter(Document.file_id == entry["file_id"]).first()
+                if doc:
+                    doc.department = "hr"
+                    doc.tags = ["policy", "leave"]
             except Exception:
                 pass
+        else:
+            doc = (
+                db.query(Document)
+                .filter(Document.user_key == user_key, Document.name == leave_policy_name)
+                .first()
+            )
+            if doc and doc.department != "hr":
+                doc.department = "hr"
+                if not doc.tags:
+                    doc.tags = ["policy", "leave"]
         db.commit()
     finally:
         db.close()

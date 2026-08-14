@@ -17,6 +17,7 @@ import Card from '../components/ui/Card'
 import Button from '../components/ui/Button'
 import { api } from '../lib/api'
 import { useApp } from '../context/AppContext'
+let uuidCounter = 0
 
 const chatDepartments = [
   { id: 'general', label: 'General', icon: 'MessageSquare' },
@@ -133,7 +134,7 @@ export default function AIChat() {
 
   function appendReply(result) {
     setMessages((prev) => [...prev, {
-      id: result.message_id || Date.now() + 1,
+      id: uuidCounter++,
       role: 'assistant',
       content: result.response || '',
       sources: result.sources || [],
@@ -142,8 +143,9 @@ export default function AIChat() {
   }
 
   async function streamChat(content) {
-    const tempId = Date.now() + 1
+    const tempId = uuidCounter++
     setMessages((prev) => [...prev, { id: tempId, role: 'assistant', content: '', sources: [], suggestions: [] }])
+    const agentScope = activeAgent ? `${activeAgent.name}: ${activeAgent.scope}` : undefined
 
     const res = await fetch('/api/chat/stream', {
       method: 'POST',
@@ -204,7 +206,7 @@ export default function AIChat() {
     const content = (text ?? input).trim()
     if (!content) return
     setInput('')
-    setMessages((prev) => [...prev, { id: Date.now(), role: 'user', content }])
+    setMessages((prev) => [...prev, { id: uuidCounter++, role: 'user', content }])
     setIsTyping(true)
 
     const agentScope = activeAgent ? `${activeAgent.name}: ${activeAgent.scope}` : undefined
@@ -226,7 +228,7 @@ export default function AIChat() {
       dispatch({
         type: 'ADD_ACTIVITY',
         payload: {
-          id: Date.now(),
+id: uuidCounter++,
           user: user?.name || 'User',
           action: 'Asked AI',
           target: content.slice(0, 48) + (content.length > 48 ? '\u2026' : ''),
@@ -237,7 +239,7 @@ export default function AIChat() {
     } catch (err) {
       toast(err.message || 'Chat failed', 'error')
       setMessages((prev) => [...prev, {
-        id: Date.now() + 1,
+        id: uuidCounter++ + 1,
         role: 'assistant',
         content: 'Sorry, I encountered an error. Please try again.',
       }])

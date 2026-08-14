@@ -9,6 +9,11 @@ from groq import APIConnectionError, APIError, APIStatusError
 
 from app.config import GroqConfig
 
+
+class GeminiServiceError(Exception):
+    pass
+
+
 _client = (
     groq.Groq(
         api_key=GroqConfig.API_KEY,
@@ -144,7 +149,7 @@ def generate_answer_with_tools(
                 messages.append({"role": role, "content": content})
     messages.append({"role": "user", "content": user_message})
 
-    tools = _get_tools(tool_defs)
+    tools = _build_tools(tool_defs)
 
     executed_tools = []
 
@@ -171,6 +176,7 @@ def generate_answer_with_tools(
 
         user_email = session.get("user", "")
         assistant_tool_calls = []
+        tool_results_by_id = {}
         for tc in msg.tool_calls:
             fn = tc.function
             args = fn.arguments
@@ -181,42 +187,58 @@ def generate_answer_with_tools(
                     args = {}
             tool_result = execute_tool(fn.name, dict(args), user_email)
             executed_tools.append({"name": fn.name, "args": args, "result": tool_result})
+            tool_results_by_id[tc.id] = tool_result
+            assistant_tool_calls.append(
+                {
+                    "id": tc.id,
+                    "type": "function",
+                    "function": {"name": fn.name, "arguments": fn.arguments},
+                }
+            )
 
-        if not getattr(msg, "tool_calls", None):
-            return {"text": msg.content or "", "tool_calls": executed_tools}
-
-        # re-run with the executed tool results appended
         messages.append(
-            {"role": "tool", "content": json.dumps({"tool_results": executed_tools})}
+            {"role": "assistant", "content": None, "tool_calls": assistant_tool_calls}
         )
+        for tc in msg.tool_calls:
+            messages.append(
+                {
+                    "role": "tool",
+                    "tool_call_id": tc.id,
+                    "content": json.dumps(tool_results_by_id[tc.id]),
+                }
+            )
 
-    # final response after tool loop
-    msg = response.choices[0].message
-    return {"text": msg.content or "", "tool_calls": executed_tools}
-
-
-def _get_tools(tool_defs: list) -> list:
-    """Return the full tool list, lazily initialising from ALL_TOOLS once.
-
-    Uses a module-level flag to initialise only on first call.
-    """
-    global _tool_list_loaded  # 👆 declare we're using the module-level variable
-    if not _tool_list_loaded:
-        from app.services.tools import ALL_TOOLS, TOOL_NAME_MAP
-        _tool_list_loaded = True
-        global _ALL_TOOLS_CACHE  # 👆 declare we're using this too
-        _ALL_TOOLS_CACHE = ALL_TOOLS
-    # normalise: if each item is a name string, look it up; otherwise return as-is
-    normalised = []
-    for t in tool_defs:
-        if isinstance(t, str):
-            normalised.append(TOOL_NAME_MAP.get(t, t))
-        else:
-            normalised.append(t)
-    return normalised
+    return {
+        "text": "",
+        "tool_calls": executed_tools,
+        "error": "Max tool call iterations reached",
+    }
 
 
-_ALL_TOOLS_CACHE = None
+def _build_tools(tool_defs: list) -> list:
+    """Normalise tool definitions into the Groq tool schema."""
+    from app.services.tools import TOOL_NAME_MAP
+
+    tools = []
+    for td in tool_defs:
+        if isinstance(td, str):
+            td = TOOL_NAME_MAP.get(td)
+            if not td:
+                continue
+        params = dict(td.get("parameters") or {})
+        if not params.get("properties"):
+            params["properties"] = {}
+        tools.append(
+            {
+                "type": "function",
+                "function": {
+                    "name": td["name"],
+                    "description": td.get("description", ""),
+                    "parameters": params,
+                },
+            }
+        )
+    return tools
 
 
 def _redact_key(text: str) -> str:

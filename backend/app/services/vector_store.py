@@ -223,6 +223,9 @@ class ChromaStore:
         if col.count() == 0:
             return []
 
+        if source_filter is not None and len(source_filter) == 0:
+            return []
+
         candidate_k = min(top_k * 6, col.count())
         where = {"file_id": {"$in": source_filter}} if source_filter else None
 
