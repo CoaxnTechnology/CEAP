@@ -144,8 +144,7 @@ def generate_answer_with_tools(
                 messages.append({"role": role, "content": content})
     messages.append({"role": "user", "content": user_message})
 
-    # build tool list from the group dict
-    tools = _build_tools(tool_defs)
+    tools = _get_tools(tool_defs)
 
     executed_tools = []
 
@@ -196,18 +195,17 @@ def generate_answer_with_tools(
     return {"text": msg.content or "", "tool_calls": executed_tools}
 
 
-_build_tools = None
+def _get_tools(tool_defs: list) -> list:
+    """Return the full tool list, lazily initialising from ALL_TOOLS once.
 
-
-def _build_tools(tool_defs: list) -> list:
-    """Normalise *tool_defs* (a list of group-name or dict dicts) into
-    the Groq ``tool`` schema expected by ``_client.chat.completions.create``.
+    Uses a module-level flag to initialise only on first call.
     """
-    if _build_tools is None:
-        # lazily import the original tool definitions so we don’t initialise
-        # them at module import time
+    global _tool_list_loaded  # 👆 declare we're using the module-level variable
+    if not _tool_list_loaded:
         from app.services.tools import ALL_TOOLS, TOOL_NAME_MAP
-        _build_tools = ALL_TOOLS
+        _tool_list_loaded = True
+        global _ALL_TOOLS_CACHE  # 👆 declare we're using this too
+        _ALL_TOOLS_CACHE = ALL_TOOLS
     # normalise: if each item is a name string, look it up; otherwise return as-is
     normalised = []
     for t in tool_defs:
@@ -218,8 +216,7 @@ def _build_tools(tool_defs: list) -> list:
     return normalised
 
 
-class GeminiServiceError(Exception):
-    pass
+_ALL_TOOLS_CACHE = None
 
 
 def _redact_key(text: str) -> str:
