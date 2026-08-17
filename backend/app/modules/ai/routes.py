@@ -180,6 +180,11 @@ def _fallback_response(top_chunks: list, registry: dict, label: str) -> dict:
     }
 
 
+def _clean_tool_refs(text: str) -> str:
+    import re
+    return re.sub(r"【[^】]*】", "", text).strip()
+
+
 @chat_bp.route("/api/chat/session", methods=["GET"])
 @login_required
 def get_current_chat_session():
@@ -444,7 +449,7 @@ def api_chat():
             text = "I'm not sure how to help with that. You can ask me about staff matters (leaves, attendance, policies), finance (fee invoices, expenses), or school admin (circulars, meetings, announcements)."
 
     response_payload = {
-        "response": text,
+        "response": _clean_tool_refs(text),
         "sources": _build_source_payload(top_chunks, registry) if top_chunks else [],
         "chunks_used": len(top_chunks) if top_chunks else 0,
         "timestamp": time.time(),

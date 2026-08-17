@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Sparkles, X, Send, ChevronRight } from 'lucide-react'
+import { Sparkles, X, Send, Square, ChevronRight } from 'lucide-react'
 import { useApp } from '../../context/AppContext'
 import { aiAgents } from '../../data/osData'
 import { api } from '../../lib/api'
+import Markdown from '../ui/Markdown'
 
 const starters = [
   'What needs my attention this morning?',
@@ -28,6 +29,8 @@ export default function AICopilot({ open, onClose }) {
   const navigate = useNavigate()
   const [agent, setAgent] = useState('principal')
   const [input, setInput] = useState('')
+  const [isStopping, setIsStopping] = useState(false)
+  const abortRef = useRef(null)
   const [msgs, setMsgs] = useState([
     {
       role: 'assistant',
@@ -44,8 +47,11 @@ export default function AICopilot({ open, onClose }) {
     setMsgs((m) => [...m, { role: 'user', text: q }])
     setMsgs((m) => [...m, { role: 'assistant', text: '…' }])
     setInput('')
+    setIsStopping(true)
+    abortRef.current = new AbortController()
     api('/api/chat', {
       method: 'POST',
+      signal: abortRef.current.signal,
       body: JSON.stringify({
         question: q,
         want_suggestions: false,
@@ -57,8 +63,20 @@ export default function AICopilot({ open, onClose }) {
         setMsgs((m) => [...m.slice(0, -1), { role: 'assistant', text: res.response || res.answer || 'No response.' }])
       })
       .catch((err) => {
-        setMsgs((m) => [...m.slice(0, -1), { role: 'assistant', text: err.message || 'Chat failed. Try again.' }])
+        if (err.name === 'AbortError') {
+          setMsgs((m) => [...m.slice(0, -1), { role: 'assistant', text: 'Response stopped.' }])
+        } else {
+          setMsgs((m) => [...m.slice(0, -1), { role: 'assistant', text: err.message || 'Chat failed. Try again.' }])
+        }
       })
+      .finally(() => {
+        setIsStopping(false)
+        abortRef.current = null
+      })
+  }
+
+  function stop() {
+    abortRef.current?.abort()
   }
 
   if (!open) return null
@@ -118,7 +136,7 @@ export default function AICopilot({ open, onClose }) {
                   : 'rounded-bl-md border border-slate-100 bg-slate-50 text-slate-700'
               }`}
             >
-              {m.text}
+              {m.role === 'user' ? m.text : <Markdown text={m.text} />}
             </div>
           </div>
         ))}
@@ -143,21 +161,29 @@ export default function AICopilot({ open, onClose }) {
       <form
         onSubmit={(e) => {
           e.preventDefault()
-          send()
+          if (isStopping) {
+            stop()
+          } else {
+            send()
+          }
         }}
         className="flex gap-2 border-t border-slate-100 p-3"
       >
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
+          disabled={isStopping}
           placeholder="Ask anything about the school…"
-          className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-navy-400 focus:bg-white"
+          className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-navy-400 focus:bg-white disabled:opacity-60"
         />
         <button
           type="submit"
-          className="flex h-10 w-10 items-center justify-center rounded-xl bg-navy-900 text-white hover:bg-navy-800"
+          title={isStopping ? 'Stop response' : 'Send'}
+          className={`flex h-10 w-10 items-center justify-center rounded-xl text-white hover:bg-navy-800 ${
+            isStopping ? 'bg-red-600 hover:bg-red-700' : 'bg-navy-900'
+          }`}
         >
-          <Send className="h-4 w-4" />
+          {isStopping ? <Square className="h-3.5 w-3.5" /> : <Send className="h-4 w-4" />}
         </button>
       </form>
     </div>

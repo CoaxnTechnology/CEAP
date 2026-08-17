@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import Card from '../components/ui/Card'
 import Button from '../components/ui/Button'
+import Markdown from '../components/ui/Markdown'
 import { api } from '../lib/api'
 import { useApp } from '../context/AppContext'
 let uuidCounter = 0
@@ -581,19 +582,5 @@ id: uuidCounter++,
 }
 
 function MessageBody({ text }) {
-  const parts = text.split(/(\*\*[^*]+\*\*)/g)
-  return (
-    <div className="whitespace-pre-wrap">
-      {parts.map((part, i) => {
-        if (part.startsWith('**') && part.endsWith('**')) {
-          return (
-            <strong key={i} className="font-semibold text-slate-900">
-              {part.slice(2, -2)}
-            </strong>
-          )
-        }
-        return <span key={i}>{part}</span>
-      })}
-    </div>
-  )
+  return <Markdown text={text} />
 }
