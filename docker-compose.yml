@@ -2,8 +2,6 @@ services:
   backend:
     build: ./backend
     env_file: backend/.env
-    environment:
-      DB_URI: postgresql://${POSTGRES_USER:-documind_user}:${POSTGRES_PASSWORD:-documind_pass}@postgres:5432/${POSTGRES_DB:-documind}
     ports:
       - "127.0.0.1:8010:8000"
     volumes:
@@ -19,8 +17,7 @@ services:
 
   postgres:
     image: postgres:16
-    environment:
-      env_file: backend/.env
+    env_file: backend/.env
     volumes:
       - pgdata:/var/lib/postgresql/data
     restart: unless-stopped
