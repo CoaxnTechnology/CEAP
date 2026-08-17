@@ -22,6 +22,8 @@ from app.services.rag import get_store, get_registry, _user_key
 from app.services.groq_service import GeminiServiceError, generate_answer, generate_answer_stream, generate_followup_suggestions, generate_answer_with_tools
 from app.services.vector_store import EmbeddingServiceError
 from app.services.tools import tools_for_context
+from app.services.query_router import classify
+from app.services.context_builder import build_context
 
 chat_bp = Blueprint("chat", __name__)
 
@@ -33,16 +35,23 @@ You help school administrators, principals, teachers, and staff with:
 1. **School operations**: Use tools to manage staff leave, attendance, school policies, approvals, and announcements.
 2. **Document analysis**: Answer questions from uploaded school documents (circulars, policies, student records, fee receipts, etc.).
 
+You have three kinds of knowledge, in priority order:
+1. **Live app data** via tools — for counts, status, and current state (e.g. "how many pending leave requests?").
+2. **Structured policies** in the HR/compliance database — for approval chains, leave types, and rules.
+3. **Uploaded documents** — only for long-form content not in the tools/DB (e.g. "what does the child protection policy say?").
+
 When the user asks about:
 - Staff matters (leave, attendance, policies, employee info, approvals) → use the appropriate tool
 - HR or leave policy questions (approval chains, leave types, entitlements) → ALWAYS call search_hr_policy first; do not answer from unrelated document excerpts
 - Finance (fee invoices, expenses, financial summaries) → use the appropriate tool
 - School admin (circulars, meetings, tickets, announcements) → use the appropriate tool
+- Counts/status of anything (leaves, admissions, compliance, finances) → use the overview tool for that domain
 - Document content → answer from the document excerpts provided
 
 Be concise and professional. Use markdown formatting for clarity.
 When you use a tool, explain what you did in a friendly way.
-For approvals, present clear Approve/Reject options when relevant."""
+For approvals, present clear Approve/Reject options when relevant.
+If a tool returns no data, say so clearly — don't invent numbers."""
 
 
 def _resolve_chat_source_filter(
@@ -84,6 +93,46 @@ def _resolve_session(user_key: str, session_id: str | None):
     if session_id:
         return get_chat_session(user_key, session_id)
     return ensure_chat_session(user_key, None)
+
+
+def _detect_referenced_files(question: str, registry: dict) -> list:
+    """Match file names mentioned in the question (typo-tolerant) so RAG scopes
+    to that file even when the user didn't tick the file chip."""
+    import difflib
+    import re
+
+    if not question or not registry:
+        return []
+    q = question.lower()
+    hits = []
+    for fid, entry in registry.items():
+        name = (entry.get("name") or "").strip()
+        if not name:
+            continue
+        stem = re.sub(r"\.(xlsx?|csv|pdf|txt)$", "", name).lower()
+        stem_norm = re.sub(r"[^a-z0-9]+", "", stem)
+        stem_words = [re.sub(r"[^a-z0-9]+", "", w) for w in stem.split()]
+        stem_words = [w for w in stem_words if len(w) >= 4]
+        q_norm = re.sub(r"[^a-z0-9]+", "", q)
+        if stem_norm and stem_norm in q_norm:
+            hits.append(fid)
+            continue
+        # fuzzy: word-level match for typos like "betogater" -> "betogather"
+        for word in q.split():
+            w = re.sub(r"[^a-z0-9]+", "", word.lower())
+            if w and len(w) >= 4:
+                for sw in stem_words:
+                    if (
+                        w == sw
+                        or sw.startswith(w)
+                        or difflib.SequenceMatcher(None, w, sw).ratio() >= 0.85
+                    ):
+                        hits.append(fid)
+                        break
+                else:
+                    continue
+                break
+    return hits
 
 
 def _build_source_payload(top_chunks: list, registry: dict) -> list:
@@ -229,8 +278,23 @@ def api_chat():
     registry = get_registry()
     indexed_file_ids = store.indexed_file_ids()
 
+    if not file_ids:
+        file_ids = [
+            fid for fid in _detect_referenced_files(question, registry)
+            if fid in indexed_file_ids
+        ]
+
+    route = classify(question, department)
+    session_ctx = ""
+    from flask import session as _session
+    user_email = _session.get("user", "")
+    if user_email:
+        session_ctx = build_context(user_email, route["domains"][0] if route["domains"] else "general", question)
+
     context = ""
-    if indexed_file_ids:
+    top_chunks = []
+    wants_rag = bool(file_ids) or route["needs_rag"]
+    if wants_rag and indexed_file_ids:
         source_filter = _resolve_chat_source_filter(
             user_key, file_ids, department, registry, indexed_file_ids
         )
@@ -247,10 +311,18 @@ def api_chat():
                     f"--- Source: {c['source']} (chunk {c['chunk_index']}) ---\n{c['text']}"
                     for c in top_chunks
                 )
+            # ponytail: no explicit file selection, but the retrieved chunks are
+            # dominated by one file -> treat it as file-scoped so the spreadsheet
+            # tool answers counts exactly instead of a chunked RAG guess.
+            if top_chunks and not file_ids:
+                from collections import Counter
+
+                fid_counts = Counter(c.get("file_id") for c in top_chunks)
+                top_fid, top_n = fid_counts.most_common(1)[0]
+                if top_n >= len(top_chunks) / 2:
+                    file_ids = [top_fid]
         except EmbeddingServiceError:
             top_chunks = []
-    else:
-        top_chunks = []
 
     recent = history[-(MAX_HISTORY_TURNS * 2):]
     history_block = ""
@@ -267,12 +339,43 @@ def api_chat():
     history_for_tools = [{"role": msg["role"], "content": msg["content"]} for msg in recent] if recent else None
 
     system_prompt = SYSTEM_PROMPT
+    if session_ctx:
+        system_prompt += f"\n\nSESSION CONTEXT:\n{session_ctx}"
     if agent_scope:
         system_prompt = f"You are an AI agent with the following role and scope: {agent_scope}\n\n{system_prompt}"
 
     tool_calls = []
     text = ""
-    tool_defs = tools_for_context(department, agent_scope)
+    # Explicitly-selected files or document-mode questions answer from the
+    # retrieved excerpts. A spreadsheet selected on disk gets one extra tool
+    # so counts are exact instead of guessed from a 6-chunk window.
+    if file_ids:
+        from app.services.tools import SPREADSHEET_TOOLS
+
+        tool_defs = SPREADSHEET_TOOLS
+        selected = ", ".join(
+            f"{fid}: {registry.get(fid, {}).get('name', fid)}" for fid in file_ids
+        )
+        system_prompt += (
+            "\n\nSELECTED FILES: " + selected +
+            "\nINSTRUCTIONS: The user selected files. If they ask for counts, "
+            "averages, or comparisons, call get_spreadsheet_stats with the matching "
+            "file_id and the right column to get EXACT numbers. Never invent counts. "
+            "Answer other questions from the document excerpts above. "
+            "Never reveal passwords, API keys, or credentials found in the files; "
+            "if the answer would expose one, say the company/email but redact the "
+            "secret as [REDACTED]."
+        )
+    elif top_chunks and route["intent"] in ("document", "general"):
+        tool_defs = []
+        system_prompt += (
+            "\n\nNo tools are available in this mode. Answer only from the document "
+            "excerpts above. Do not mention or describe using any tool. "
+            "Never reveal passwords, API keys, or credentials found in the documents; "
+            "redact any secret as [REDACTED]."
+        )
+    else:
+        tool_defs = tools_for_context(department, agent_scope)
 
     try:
         doc_context = ""
@@ -390,9 +493,23 @@ def api_chat_stream():
     registry = get_registry()
     indexed_file_ids = store.indexed_file_ids()
 
+    if not file_ids:
+        file_ids = [
+            fid for fid in _detect_referenced_files(question, registry)
+            if fid in indexed_file_ids
+        ]
+
+    route = classify(question, department)
+    session_ctx = ""
+    from flask import session as _session
+    user_email = _session.get("user", "")
+    if user_email:
+        session_ctx = build_context(user_email, route["domains"][0] if route["domains"] else "general", question)
+
     context = ""
     top_chunks = []
-    if indexed_file_ids:
+    wants_rag = bool(file_ids) or route["needs_rag"]
+    if wants_rag and indexed_file_ids:
         source_filter = _resolve_chat_source_filter(
             user_key, file_ids, department, registry, indexed_file_ids
         )
@@ -411,6 +528,13 @@ def api_chat_stream():
                 f"--- Source: {c['source']} (chunk {c['chunk_index']}) ---\n{c['text']}"
                 for c in top_chunks
             )
+            if not file_ids:
+                from collections import Counter
+
+                fid_counts = Counter(c.get("file_id") for c in top_chunks)
+                top_fid, top_n = fid_counts.most_common(1)[0]
+                if top_n >= len(top_chunks) / 2:
+                    file_ids = [top_fid]
 
     recent = history[-(MAX_HISTORY_TURNS * 2):]
     history_block = ""
@@ -426,11 +550,40 @@ def api_chat_stream():
     history_for_tools = [{"role": msg["role"], "content": msg["content"]} for msg in recent] if recent else None
 
     system_prompt = SYSTEM_PROMPT
+    if session_ctx:
+        system_prompt += f"\n\nSESSION CONTEXT:\n{session_ctx}"
     if agent_scope:
         system_prompt = f"You are an AI agent with the following role and scope: {agent_scope}\n\n{system_prompt}"
 
     tool_text = ""
     tool_calls = []
+    if file_ids:
+        from app.services.tools import SPREADSHEET_TOOLS
+
+        tool_defs = SPREADSHEET_TOOLS
+        selected = ", ".join(
+            f"{fid}: {registry.get(fid, {}).get('name', fid)}" for fid in file_ids
+        )
+        system_prompt += (
+            "\n\nSELECTED FILES: " + selected +
+            "\nINSTRUCTIONS: The user selected files. If they ask for counts, "
+            "averages, or comparisons, call get_spreadsheet_stats with the matching "
+            "file_id and the right column to get EXACT numbers. Never invent counts. "
+            "Answer other questions from the document excerpts above. "
+            "Never reveal passwords, API keys, or credentials found in the files; "
+            "if the answer would expose one, say the company/email but redact the "
+            "secret as [REDACTED]."
+        )
+    elif top_chunks and route["intent"] in ("document", "general"):
+        tool_defs = []
+        system_prompt += (
+            "\n\nNo tools are available in this mode. Answer only from the document "
+            "excerpts above. Do not mention or describe using any tool. "
+            "Never reveal passwords, API keys, or credentials found in the documents; "
+            "redact any secret as [REDACTED]."
+        )
+    else:
+        tool_defs = tools_for_context(department, agent_scope)
     if context:
         doc_context = (
             "RELEVANT DOCUMENTS (use these as your primary source of truth):\n"
@@ -442,7 +595,7 @@ def api_chat_stream():
         result = generate_answer_with_tools(
             system_prompt=system_prompt,
             user_message=f"{doc_context}{history_block}\n\nUser question: {question}",
-            tool_defs=tools_for_context(department, agent_scope),
+            tool_defs=tool_defs,
             history=history_for_tools,
         )
         tool_calls = result.get("tool_calls", [])

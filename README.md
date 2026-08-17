@@ -71,7 +71,7 @@ pip install -r requirements.txt
 Copy the example env file and fill in your keys:
 
 ```bash
-cp .env.example .env
+cp .env.example backend/.env
 ```
 
 ```env
@@ -198,7 +198,7 @@ OneDrive_Chatbot/
 ├── flask_session/             # Server-side session store
 ├── requirements.txt
 ├── run.py
-└── .env
+└── .env                # backend/.env — the single config file
 ```
 
 ## Supported File Types

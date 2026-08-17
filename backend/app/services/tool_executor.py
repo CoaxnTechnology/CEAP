@@ -1,4 +1,5 @@
 import json
+import os
 import time
 from datetime import datetime, timedelta
 
@@ -1294,6 +1295,143 @@ def _generate_report_card(args: dict, user_email: str) -> dict:
         return {"comment": "", "message": f"Could not generate comment: {str(e)}"}
 
 
+def _get_hr_overview(args: dict, user_email: str) -> dict:
+    from app.modules.hr.routes import overview as _hr_overview
+
+    resp = _hr_overview()
+    data = resp.get_json() if hasattr(resp, "get_json") else resp
+    return {"overview": data}
+
+
+def _get_finance_overview(args: dict, user_email: str) -> dict:
+    from app.modules.finance.routes import overview as _finance_overview
+
+    resp = _finance_overview()
+    data = resp.get_json() if hasattr(resp, "get_json") else resp
+    return {"overview": data}
+
+
+def _get_admissions_overview(args: dict, user_email: str) -> dict:
+    from app.modules.admissions.routes import overview as _admissions_overview
+
+    resp = _admissions_overview()
+    data = resp.get_json() if hasattr(resp, "get_json") else resp
+    return {"overview": data}
+
+
+def _get_compliance_status(args: dict, user_email: str) -> dict:
+    from app.modules.compliance.routes import list_evidence
+
+    resp = list_evidence()
+    rows = resp.get_json() if hasattr(resp, "get_json") else resp
+    statuses = {"available": 0, "expiring": 0, "missing": 0}
+    for r in rows or []:
+        s = (r.get("status") or "").lower()
+        if s in statuses:
+            statuses[s] += 1
+        else:
+            statuses.setdefault(s, 0)
+            statuses[s] += 1
+    return {"total_evidence": len(rows or []), "by_status": statuses}
+
+
+def _get_executive_briefing(args: dict, user_email: str) -> dict:
+    from app.modules.executive.routes import overview as _executive_overview
+
+    resp = _executive_overview()
+    data = resp.get_json() if hasattr(resp, "get_json") else resp
+    return {"overview": data}
+
+
+def _get_spreadsheet_stats(args: dict, user_email: str) -> dict:
+    file_id = (args.get("file_id") or "").strip()
+    column = (args.get("column") or "").strip()
+    db = _db_session()
+    try:
+        query = db.query(Document).filter(
+            Document.file_path != "",
+            Document.file_path.like("%.xlsx"),
+        )
+        if file_id:
+            doc = query.filter(Document.file_id == file_id).first()
+        else:
+            # ponytail: model may omit file_id; fall back to the user's first
+            # spreadsheet so the count still works.
+            doc = query.first()
+        if not doc or not os.path.exists(doc.file_path):
+            return {"error": "Spreadsheet file not found on disk. Re-upload the file."}
+        path = doc.file_path
+    finally:
+        db.close()
+
+    import pandas as pd
+
+    ext = os.path.splitext(path)[1].lower()
+    try:
+        if ext in (".xlsx", ".xls"):
+            sheets = pd.read_excel(path, sheet_name=None)
+            # ponytail: sheet 0 is often a README/notes sheet; pick the sheet
+            # with the most data rows.
+            df = max(
+                sheets.values(),
+                key=lambda s: len(s.dropna(how="all")),
+            )
+        elif ext == ".csv":
+            df = pd.read_csv(path, on_bad_lines="skip")
+        else:
+            return {"error": "Not a spreadsheet file"}
+    except Exception as e:
+        return {"error": f"Could not read spreadsheet: {str(e)}"}
+
+    df = df.dropna(how="all")
+    if not column:
+        return {
+            "total_rows": len(df),
+            "columns": [str(c) for c in df.columns],
+            "message": "Call again with a column name to get exact per-value counts.",
+        }
+
+    if column not in df.columns:
+        return {
+            "error": f"Column '{column}' not found. Available columns: {[str(c) for c in df.columns]}"
+        }
+
+    counts = df[column].astype(str).replace({"nan": "(blank)"}).value_counts()
+    if df[column].notna().sum() == 0:
+        return {
+            "column": column,
+            "total_rows": len(df),
+            "counts": {},
+            "message": f"Column '{column}' is empty in the data sheet.",
+        }
+    top = counts.head(20).to_dict()
+    try:
+        if pd.api.types.is_datetime64_any_dtype(df[column]) and df[column].notna().any():
+            stats = {
+                "min": str(df[column].min().date()),
+                "max": str(df[column].max().date()),
+                "mean": str(df[column].mean().date()),
+            }
+        else:
+            numeric = pd.to_numeric(df[column], errors="coerce")
+            if numeric.notna().sum() > 0:
+                stats = {
+                    "min": float(numeric.min()),
+                    "max": float(numeric.max()),
+                    "mean": round(float(numeric.mean()), 2),
+                }
+            else:
+                stats = {}
+    except Exception:
+        stats = {}
+    return {
+        "column": column,
+        "total_rows": len(df),
+        "counts": top,
+        "stats": stats,
+    }
+
+
 TOOL_EXECUTORS = {
     "apply_leave": _apply_leave,
     "get_leave_balance": _get_leave_balance,
@@ -1339,4 +1477,10 @@ TOOL_EXECUTORS = {
     "find_exam_schedule": _find_exam_schedule,
     "search_student_record": _search_student_record,
     "generate_report_card": _generate_report_card,
+    "get_hr_overview": _get_hr_overview,
+    "get_finance_overview": _get_finance_overview,
+    "get_admissions_overview": _get_admissions_overview,
+    "get_compliance_status": _get_compliance_status,
+    "get_executive_briefing": _get_executive_briefing,
+    "get_spreadsheet_stats": _get_spreadsheet_stats,
 }

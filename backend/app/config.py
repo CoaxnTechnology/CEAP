@@ -2,7 +2,7 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv(Path(__file__).parent.parent.parent / '.env')
+load_dotenv(Path(__file__).parent.parent / '.env')
 
 
 class Config:
@@ -53,7 +53,7 @@ class GoogleDriveConfig:
 
 class GroqConfig:
     API_KEY = os.getenv("GROQ_API_KEY")
-    MODEL = os.getenv("GROQ_MODEL", "llama-3.1-8b-instant")
+    MODEL = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
 
 
 class DBConfig:

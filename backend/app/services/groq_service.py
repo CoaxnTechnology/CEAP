@@ -153,7 +153,7 @@ def generate_answer_with_tools(
 
     executed_tools = []
 
-    for attempt in range(3):
+    for attempt in range(4):
         try:
             response = _client.chat.completions.create(
                 model=GroqConfig.MODEL,
@@ -161,14 +161,36 @@ def generate_answer_with_tools(
                 tools=tools,
             )
         except (APIError, APIConnectionError) as exc:
-            if attempt == 2:
+            # ponytail: Groq 400s a tool call the moment the model emits a
+            # malformed/empty call (e.g. missing file_id). That's a soft failure:
+            # retry once WITHOUT tools so the user still gets a clean text answer.
+            if getattr(exc, "status_code", None) == 400 and tools:
+                try:
+                    plain = _client.chat.completions.create(
+                        model=GroqConfig.MODEL,
+                        messages=messages,
+                    )
+                    return {
+                        "text": plain.choices[0].message.content or "",
+                        "tool_calls": executed_tools,
+                    }
+                except (APIError, APIConnectionError):
+                    pass
+            if attempt == 3:
                 raise GeminiServiceError(_redact_key(str(exc))) from exc
-            time.sleep(1)
+            time.sleep(2 * (attempt + 1))
             continue
 
         msg = response.choices[0].message
         if not getattr(msg, "tool_calls", None):
-            return {"text": msg.content or "", "tool_calls": executed_tools}
+            # ponytail: Groq sometimes emits llama-style <function=name>{args}</function>
+            # markup as plain text instead of structured tool_calls. Parse it into a
+            # real call so the answer uses actual data instead of leaking the markup.
+            markup_calls = _parse_function_markup(msg.content or "")
+            if markup_calls:
+                msg.tool_calls = markup_calls
+            else:
+                return {"text": msg.content or "", "tool_calls": executed_tools}
 
         from flask import session
 
@@ -185,6 +207,8 @@ def generate_answer_with_tools(
                     args = json.loads(args or "{}")
                 except json.JSONDecodeError:
                     args = {}
+            if not isinstance(args, dict):
+                args = {}
             tool_result = execute_tool(fn.name, dict(args), user_email)
             executed_tools.append({"name": fn.name, "args": args, "result": tool_result})
             tool_results_by_id[tc.id] = tool_result
@@ -213,6 +237,32 @@ def generate_answer_with_tools(
         "tool_calls": executed_tools,
         "error": "Max tool call iterations reached",
     }
+
+
+def _parse_function_markup(text: str) -> list:
+    """Parse llama-style '<function=name>{json}</function>' tags into tool-call
+    objects shaped like Groq's structured tool calls. Returns [] if none found."""
+    import re
+
+    import types
+
+    calls = []
+    for match in re.finditer(r"<?function=([^>]+)>(.*?)</function>", text, re.DOTALL):
+        name = match.group(1).strip().strip("`")
+        args_text = match.group(2).strip()
+        try:
+            args = json.loads(args_text or "{}")
+        except json.JSONDecodeError:
+            args = {}
+        call = types.SimpleNamespace(
+            id=f"markup_{len(calls)}",
+            type="function",
+            function=types.SimpleNamespace(
+                name=name, arguments=json.dumps(args)
+            ),
+        )
+        calls.append(call)
+    return calls
 
 
 def _build_tools(tool_defs: list) -> list:

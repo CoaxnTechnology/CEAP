@@ -2,6 +2,7 @@
 
 import hashlib
 import os
+import shutil
 import time
 import tempfile
 from flask import Blueprint, request, jsonify, current_app, make_response, send_file
@@ -30,6 +31,8 @@ files_bp = Blueprint("files", __name__)
 
 STUDENT_UPLOADS = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "uploads", "students")
 os.makedirs(STUDENT_UPLOADS, exist_ok=True)
+STORAGE_RAW = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "storage", "raw")
+os.makedirs(STORAGE_RAW, exist_ok=True)
 
 
 def _user_key_for(email: str) -> str:
@@ -75,6 +78,22 @@ def api_upload():
             file.filename, text, os.path.getsize(tmp_path), "local",
             category_id=category_id, department=department,
         )
+        # ponytail: persist raw file so spreadsheet-count tools can read exact
+        # values instead of guessing from a 6-chunk RAG window.
+        file_id = entry.get("file_id")
+        if file_id and ext in (".xlsx", ".xls", ".csv"):
+            raw_dir = os.path.join(STORAGE_RAW, file_id[:2])
+            os.makedirs(raw_dir, exist_ok=True)
+            raw_path = os.path.join(raw_dir, f"{file_id}{ext}")
+            shutil.copyfile(tmp_path, raw_path)
+            db = SessionLocal()
+            try:
+                doc = db.query(Document).filter(Document.file_id == file_id).first()
+                if doc:
+                    doc.file_path = raw_path
+                    db.commit()
+            finally:
+                db.close()
         total_ms = int((time.monotonic() - started) * 1000)
         current_app.logger.info(
             "upload.indexed name=%s file_id=%s chunks=%s total_ms=%s",

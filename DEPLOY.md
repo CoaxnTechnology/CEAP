@@ -28,7 +28,7 @@ git clone git@github.com:CoaxnTechnology/Documind.git repo
 Create the environment file (never commit it) — **the CI/CD pipeline reads it untouched**:
 
 ```bash
-sudo nano /opt/CEAP/.env
+sudo nano /opt/CEAP/backend/.env
 ```
 
 `.env` contents — note the **DB host is `postgres`** (the compose service name), not `localhost`:
@@ -60,7 +60,7 @@ In your repo: **Settings → Secrets and variables → Actions → New repositor
 | `SSH_PRIVATE_KEY` | Private key that can log into the VPS |
 | `RSYNC_PORT` | SSH port (defaults to 22) |
 
-`/opt/CEAP/.env` is **managed manually on the server** — CI/CD never overwrites it. Compose loads it automatically via `env_file: .env`.
+`/opt/CEAP/backend/.env` is **managed manually on the server** — CI/CD never overwrites it. Compose loads it automatically via `env_file: backend/.env`.
 
 ## 4. Deploy
 

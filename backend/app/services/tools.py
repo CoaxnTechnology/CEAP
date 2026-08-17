@@ -737,21 +737,71 @@ SCHOOL_TOOLS = [
     },
 ]
 
-ALL_TOOLS = HR_TOOLS + HR_TOOLS_EXTRA + ACCOUNTING_TOOLS + ACCOUNTING_TOOLS_EXTRA + ADMIN_TOOLS + ADMIN_TOOLS_EXTRA + SCHOOL_TOOLS
+OVERVIEW_TOOLS = [
+    {
+        "name": "get_hr_overview",
+        "description": "Get live HR overview: headcount, present/on-leave staff, open roles, leave types, pending leave requests",
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "get_finance_overview",
+        "description": "Get live finance overview: MTD collections vs target, outstanding fees, predicted defaulters, scholarships",
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "get_admissions_overview",
+        "description": "Get live admissions pipeline: applications by stage (Applied/Interview/Offer/Enrolled), seats filled, conversion",
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "get_compliance_status",
+        "description": "Get live compliance readiness: evidence status counts (available/expiring/missing) across frameworks",
+        "parameters": {"type": "object", "properties": {}},
+    },
+    {
+        "name": "get_executive_briefing",
+        "description": "Get cross-module executive briefing: attendance, revenue MTD vs target, compliance readiness, pending approvals",
+        "parameters": {"type": "object", "properties": {}},
+    },
+]
+
+SPREADSHEET_TOOLS = [
+    {
+        "name": "get_spreadsheet_stats",
+        "description": "Get EXACT counts/statistics from an uploaded spreadsheet (xlsx/xls/csv). Pass the column name (from the list of columns the tool returns) to get per-value counts. Use this for any 'how many', 'count', 'which X most', 'average' question about uploaded data — never guess counts from documents.",
+        "parameters": {
+            "type": "object",
+            "properties": {
+                "file_id": {
+                    "type": "string",
+                    "description": "file_id of the uploaded spreadsheet (from SELECTED FILES)"
+                },
+                "column": {
+                    "type": "string",
+                    "description": "Column name to count values for; omit to list columns and total rows first"
+                }
+            },
+            "required": []
+        }
+    },
+]
+
+ALL_TOOLS = HR_TOOLS + HR_TOOLS_EXTRA + ACCOUNTING_TOOLS + ACCOUNTING_TOOLS_EXTRA + ADMIN_TOOLS + ADMIN_TOOLS_EXTRA + SCHOOL_TOOLS + OVERVIEW_TOOLS + SPREADSHEET_TOOLS
 TOOL_NAME_MAP = {t["name"]: t for t in ALL_TOOLS}
 
 # Map a department / agent context to a smaller tool set instead of sending
 # all 44 schemas on every LLM call. Unmapped contexts fall back to ALL_TOOLS.
+_OVERVIEW = {t["name"]: t for t in OVERVIEW_TOOLS}
 _TOOL_GROUPS = {
-    "hr": HR_TOOLS + HR_TOOLS_EXTRA,
-    "finance": ACCOUNTING_TOOLS + ACCOUNTING_TOOLS_EXTRA,
-    "accounting": ACCOUNTING_TOOLS + ACCOUNTING_TOOLS_EXTRA,
+    "hr": HR_TOOLS + HR_TOOLS_EXTRA + [_OVERVIEW["get_hr_overview"], _OVERVIEW["get_executive_briefing"]],
+    "finance": ACCOUNTING_TOOLS + ACCOUNTING_TOOLS_EXTRA + [_OVERVIEW["get_finance_overview"], _OVERVIEW["get_executive_briefing"]],
+    "accounting": ACCOUNTING_TOOLS + ACCOUNTING_TOOLS_EXTRA + [_OVERVIEW["get_finance_overview"]],
     "admin": ADMIN_TOOLS + ADMIN_TOOLS_EXTRA,
-    "academic": SCHOOL_TOOLS + HR_TOOLS + HR_TOOLS_EXTRA,
-    "executive": SCHOOL_TOOLS + ACCOUNTING_TOOLS,
+    "academic": SCHOOL_TOOLS + HR_TOOLS + HR_TOOLS_EXTRA + [_OVERVIEW["get_admissions_overview"]],
+    "executive": SCHOOL_TOOLS + ACCOUNTING_TOOLS + list(_OVERVIEW.values()),
     "students": SCHOOL_TOOLS,
-    "admissions": SCHOOL_TOOLS,
-    "compliance": ADMIN_TOOLS,
+    "admissions": SCHOOL_TOOLS + [_OVERVIEW["get_admissions_overview"]],
+    "compliance": ADMIN_TOOLS + [_OVERVIEW["get_compliance_status"]],
     "knowledge": [],
 }
 

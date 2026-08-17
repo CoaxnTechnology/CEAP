@@ -138,4 +138,9 @@ if __name__ == "__main__":
     print(f"    user@ceap.school      : password123  (teacher)")
     print(f"\n")
 
-    app.run(debug=True, host="0.0.0.0", port=port)
+    app.run(
+        debug=True,
+        host="0.0.0.0",
+        port=port,
+        extra_files=[str(Path(__file__).parent / ".env")],
+    )
