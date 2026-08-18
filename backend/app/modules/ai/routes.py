@@ -1,7 +1,7 @@
 import json
 import re
 import time
-from flask import Blueprint, request, jsonify, Response, stream_with_context
+from flask import Blueprint, request, jsonify, Response, stream_with_context, current_app
 from app.auth_helpers import login_required
 from app.config import RAGConfig
 from app.services.persistence import (
@@ -345,9 +345,11 @@ def api_chat():
         return jsonify({"error": "Session not found"}), 404
 
     t0 = time.time()
+
     store    = get_store()
     registry = get_registry()
     indexed_file_ids = store.indexed_file_ids()
+    current_app.logger.info("[api_chat] user_key=%s indexed_files=%d store.count=%d", user_key, len(indexed_file_ids), store.count())
 
     if not file_ids:
         file_ids = [
@@ -394,6 +396,7 @@ def api_chat():
                     file_ids = [top_fid]
         except EmbeddingServiceError:
             top_chunks = []
+        current_app.logger.info("[api_chat] top_chunks=%d sources=%s", len(top_chunks), [c.get("source") for c in top_chunks][:8])
 
     recent = history[-(MAX_HISTORY_TURNS * 2):]
     history_block = ""
@@ -565,12 +568,7 @@ def api_chat_stream():
     store    = get_store()
     registry = get_registry()
     indexed_file_ids = store.indexed_file_ids()
-
-    if not file_ids:
-        file_ids = [
-            fid for fid in _detect_referenced_files(question, registry)
-            if fid in indexed_file_ids
-        ]
+    current_app.logger.info("[api_chat_stream] user_key=%s indexed_files=%d store.count=%d", user_key, len(indexed_file_ids), store.count())
 
     route = classify(question, department)
     session_ctx = ""
@@ -596,6 +594,7 @@ def api_chat_stream():
             )
         except EmbeddingServiceError:
             top_chunks = []
+        current_app.logger.info("[api_chat_stream] top_chunks=%d sources=%s", len(top_chunks), [c.get("source") for c in top_chunks][:8])
         if top_chunks:
             context = "\n\n".join(
                 f"--- Source: {c['source']} (chunk {c['chunk_index']}) ---\n{c['text']}"
@@ -726,11 +725,14 @@ def api_chat_stream():
             return
 
         if not top_chunks:
-            msg = (
-                "Your saved files are not searchable right now. Re-upload them to rebuild the index, then ask again."
-                if registry else
-                "No documents indexed yet. Upload local files or import from OneDrive first."
-            )
+            if not indexed_file_ids or store.count() == 0:
+                msg = (
+                    "Your saved files aren't indexed yet. Upload local files or import from OneDrive, then ask again."
+                    if registry else
+                    "No documents indexed yet. Upload local files or import from OneDrive first."
+                )
+            else:
+                msg = "I couldn't find relevant content in your saved documents for that question. Try rephrasing it or asking about a specific document."
             yield f"event: done\ndata: {json.dumps({'response': msg, 'sources': [], 'chunks_used': 0, 'session_id': sid})}\n\n"
             return
 

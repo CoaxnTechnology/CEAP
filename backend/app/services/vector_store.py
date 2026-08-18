@@ -32,8 +32,11 @@ class EmbeddingServiceError(Exception):
     pass
 
 # ── Single global ChromaDB client (writes to disk) ────────────────────────
+# Resolve a relative CHROMA_PATH against the repo root, not the container CWD
+# (/app/backend), so "./chroma_db" always means the mounted volume /app/chroma_db.
 _BASE = Path(__file__).parent.parent.parent.parent
-CHROMA_PATH = os.getenv("CHROMA_PATH", str(_BASE / "chroma_db"))
+_raw = os.getenv("CHROMA_PATH", "").strip()
+CHROMA_PATH = str(_BASE / _raw) if _raw and not os.path.isabs(_raw) else (_raw or str(_BASE / "chroma_db"))
 
 _chroma_client = chromadb.PersistentClient(
     path=CHROMA_PATH,
