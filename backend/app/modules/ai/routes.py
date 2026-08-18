@@ -49,6 +49,7 @@ When the user asks about:
 - Document content → answer from the document excerpts provided
 
 Be concise and professional. Use markdown formatting for clarity.
+Prefer plain text and bullet lists over tables. Only use a table when the data genuinely requires multiple aligned columns (e.g. comparing several rows of numbers); otherwise present counts and lists as normal sentences or bullet points.
 When you use a tool, explain what you did in a friendly way.
 For approvals, present clear Approve/Reject options when relevant.
 If a tool returns no data, say so clearly — don't invent numbers."""
@@ -183,6 +184,71 @@ def _fallback_response(top_chunks: list, registry: dict, label: str) -> dict:
 def _clean_tool_refs(text: str) -> str:
     import re
     return re.sub(r"【[^】]*】", "", text).strip()
+
+
+def _flatten_tables(text: str) -> str:
+    """Convert markdown tables to bullet lines so responses never render as tables."""
+    import re
+    lines = text.split("\n")
+    out = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if "|" in line and line.lstrip().startswith("|"):
+            rows = []
+            while i < len(lines) and "|" in lines[i] and lines[i].lstrip().startswith("|"):
+                cell = lines[i].strip()
+                if cell.startswith("|"):
+                    cell = cell[1:]
+                if cell.endswith("|"):
+                    cell = cell[:-1]
+                cells = [c.strip() for c in cell.split("|")]
+                if not all(re.fullmatch(r"[-: ]+", c) for c in cells):
+                    rows.append(" · ".join(cells))
+                i += 1
+            out.extend(f"- {r}" for r in rows)
+        else:
+            out.append(line)
+            i += 1
+    return "\n".join(out).strip()
+
+
+def _stream_line(line: str) -> str:
+    """Convert a single line: markdown table rows become bullets, separators dropped."""
+    import re
+    if line.lstrip().startswith("|"):
+        cell = line.strip()
+        if cell.startswith("|"):
+            cell = cell[1:]
+        if cell.endswith("|"):
+            cell = cell[:-1]
+        cells = [c.strip() for c in cell.split("|")]
+        if all(re.fullmatch(r"[-: ]+", c) for c in cells):
+            return ""
+        return f"- {' · '.join(cells)}"
+    return line
+
+
+def _summarize_tool_results(tool_calls: list) -> str:
+    """Human-readable fallback when the synthesis LLM returns empty text."""
+    parts = []
+    for tc in tool_calls:
+        result = tc.get("result", {})
+        data = result.get("data", result) if isinstance(result, dict) else result
+        if isinstance(data, dict):
+            msg = data.get("message") or data.get("error")
+            if msg:
+                parts.append(msg)
+                continue
+            items = []
+            for k, v in data.items():
+                items.append(f"{k}: {v}" if not isinstance(v, (dict, list)) else f"{k}: {v}")
+            parts.append("; ".join(items))
+        elif isinstance(data, list):
+            parts.append(", ".join(str(x) for x in data[:10]))
+        else:
+            parts.append(str(data))
+    return "\n".join(parts) or "No data returned."
 
 
 @chat_bp.route("/api/chat/session", methods=["GET"])
@@ -409,7 +475,9 @@ def api_chat():
                 system_prompt=(
                     "You are CEAP for Schools. Answer the user's question using the "
                     "tool results and documents provided. Be concise and cite the "
-                    "source filename when relevant."
+                    "source filename when relevant. Avoid tables — present counts and "
+                    "lists as plain sentences or bullet points unless multiple aligned "
+                    "columns are truly necessary."
                 ),
                 user_message=(
                     f"{doc_context}"
@@ -421,7 +489,7 @@ def api_chat():
                 tool_defs=[],
                 history=history_for_tools,
             )
-            text = synthesis.get("text") or tool_summary
+            text = synthesis.get("text") or _summarize_tool_results(tool_calls)
 
     except GeminiServiceError as exc:
         if top_chunks:
@@ -449,7 +517,7 @@ def api_chat():
             text = "I'm not sure how to help with that. You can ask me about staff matters (leaves, attendance, policies), finance (fee invoices, expenses), or school admin (circulars, meetings, announcements)."
 
     response_payload = {
-        "response": _clean_tool_refs(text),
+        "response": _flatten_tables(_clean_tool_refs(text)),
         "sources": _build_source_payload(top_chunks, registry) if top_chunks else [],
         "chunks_used": len(top_chunks) if top_chunks else 0,
         "timestamp": time.time(),
@@ -459,7 +527,7 @@ def api_chat():
 
     append_chat_message(user_key, "user", question, session_id=chat_session["session_id"])
     assistant_msg_id = append_chat_message(
-        user_key, "assistant", text,
+        user_key, "assistant", response_payload["response"],
         sources=response_payload["sources"],
         session_id=chat_session["session_id"],
     )
@@ -612,7 +680,10 @@ def api_chat_stream():
                 for tc in tool_calls
             )
             synthesis = generate_answer_with_tools(
-                system_prompt=system_prompt,
+                system_prompt=system_prompt + (
+                    "\nAvoid tables — present counts and lists as plain sentences or "
+                    "bullet points unless multiple aligned columns are truly necessary."
+                ),
                 user_message=(
                     f"{doc_context}"
                     f"TOOL RESULTS:\n{tool_summary}\n\n"
@@ -623,7 +694,7 @@ def api_chat_stream():
                 tool_defs=[],
                 history=history_for_tools,
             )
-            tool_text = synthesis.get("text") or tool_summary
+            tool_text = synthesis.get("text") or _summarize_tool_results(tool_calls)
     except GeminiServiceError as exc:
         tool_text = ""
 
@@ -633,8 +704,9 @@ def api_chat_stream():
 
     def generate():
         if tool_text:
-            yield f"event: token\ndata: {json.dumps(tool_text)}\n\n"
-            answer = tool_text
+            cleaned = _flatten_tables(_clean_tool_refs(tool_text))
+            yield f"event: token\ndata: {json.dumps(cleaned)}\n\n"
+            answer = cleaned
             append_chat_message(user_key, "user", question, session_id=sid)
             assistant_msg_id = append_chat_message(user_key, "assistant", answer, sources=source_payload, session_id=sid)
             suggestions = []
@@ -672,7 +744,7 @@ INSTRUCTIONS:
 - If the conversation history provides relevant context, use it to give a more coherent answer.
 - Be concise and accurate. Cite the source filename when relevant.
 - If the answer is not in the documents, say so clearly.
-- Use markdown formatting: bullet points, bold, tables, and code blocks where they improve clarity.
+- Use markdown formatting: bullet points and bold for clarity. Avoid tables — present counts and lists as plain sentences or bullets unless multiple aligned columns are truly necessary.
 
 CURRENT QUESTION: {question}
 
@@ -680,17 +752,28 @@ ANSWER:"""
 
         saw_first_token = False
         try:
+            buf = ""
             for token in generate_answer_stream(prompt):
                 if not saw_first_token:
                     saw_first_token = True
                 full_response.append(token)
-                yield f"event: token\ndata: {json.dumps(token)}\n\n"
+                buf += token
+                while "\n" in buf:
+                    line, buf = buf.split("\n", 1)
+                    cleaned = _stream_line(line)
+                    if cleaned:
+                        yield f"event: token\ndata: {json.dumps(cleaned)}\n\n"
+            if buf:
+                cleaned = _stream_line(buf)
+                if cleaned:
+                    yield f"event: token\ndata: {json.dumps(cleaned)}\n\n"
 
             if not saw_first_token:
                 yield f"event: done\ndata: {json.dumps({'response': '', 'sources': source_payload, 'chunks_used': len(top_chunks), 'session_id': sid})}\n\n"
                 return
 
             answer = "".join(full_response)
+            answer = _flatten_tables(_clean_tool_refs(answer)) if answer else answer
             append_chat_message(user_key, "user", question, session_id=sid)
             assistant_msg_id = append_chat_message(user_key, "assistant", answer, sources=source_payload, session_id=sid)
 

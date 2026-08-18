@@ -84,18 +84,21 @@ def _user_key() -> str:
     except Exception:
         pass
 
-    user_key = session.get("user_key")
-    if user_key:
+    # Logged-in users always use the email-derived key so a stale session
+    # value (e.g. an anonymous uuid4 saved before login) can't hide their data.
+    user = (session.get("user") or "").strip().lower()
+    if user:
+        user_key = hashlib.sha256(user.encode("utf-8")).hexdigest()[:32]
+        session["user_key"] = user_key
         try:
             g.user_key_cache = user_key
         except Exception:
             pass
         return user_key
 
-    user = (session.get("user") or "").strip().lower()
-    if user:
-        user_key = hashlib.sha256(user.encode("utf-8")).hexdigest()[:32]
-        session["user_key"] = user_key
+    # Anonymous users keep whatever key their session already has.
+    user_key = session.get("user_key")
+    if user_key:
         try:
             g.user_key_cache = user_key
         except Exception:
