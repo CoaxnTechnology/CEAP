@@ -22,6 +22,8 @@ export default function Finance() {
   const [collections, setCollections] = useState(null)
   const [savingCol, setSavingCol] = useState(false)
   const [riskClass, setRiskClass] = useState('All')
+  const [riskPage, setRiskPage] = useState(1)
+  const RISK_PAGE_SIZE = 10
 
   const load = () =>
     api('/api/finance/overview')
@@ -239,7 +241,7 @@ export default function Finance() {
         action={
           <select
             value={riskClass}
-            onChange={(e) => setRiskClass(e.target.value)}
+            onChange={(e) => { setRiskClass(e.target.value); setRiskPage(1) }}
             className="field sm:w-40"
           >
             <option value="All">All classes</option>
@@ -253,6 +255,7 @@ export default function Finance() {
           <ul className="divide-y divide-slate-50">
             {(data.riskFamilies || [])
               .filter((s) => riskClass === 'All' || s.className === riskClass)
+              .slice((riskPage - 1) * RISK_PAGE_SIZE, riskPage * RISK_PAGE_SIZE)
               .map((s) => (
             <li key={s.studentName} className="flex items-center justify-between gap-3 py-2.5">
               <div className="min-w-0">
@@ -277,6 +280,26 @@ export default function Finance() {
             </li>
           ))}
           </ul>
+          {(() => {
+            const total = (data.riskFamilies || []).filter((s) => riskClass === 'All' || s.className === riskClass).length
+            const pages = Math.max(1, Math.ceil(total / RISK_PAGE_SIZE))
+            if (pages <= 1) return null
+            return (
+              <div className="mt-3 flex items-center justify-between">
+                <p className="text-xs text-slate-400">
+                  {total} families · page {riskPage} of {pages}
+                </p>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="secondary" disabled={riskPage <= 1} onClick={() => setRiskPage((p) => Math.max(1, p - 1))}>
+                    Previous
+                  </Button>
+                  <Button size="sm" variant="secondary" disabled={riskPage >= pages} onClick={() => setRiskPage((p) => Math.min(pages, p + 1))}>
+                    Next
+                  </Button>
+                </div>
+              </div>
+            )
+          })()}
         </div>
       </Section>
 

@@ -39,6 +39,8 @@ const API_BASE = import.meta.env.VITE_API_URL || ''
 const DEPT_ORDER = ['HR', 'Admin', 'Finance', 'Academic', 'Compliance', 'Transport', 'IT', 'Sports']
 const deptColors = { HR: '#ffe4e6', Admin: '#dbeafe', Finance: '#d1fae5', Academic: '#ede9fe', Compliance: '#fef3c7', Transport: '#cffafe', IT: '#e0e7ff', Sports: '#ffedd5' }
 const deptTextColors = { HR: '#be123c', Admin: '#1d4ed8', Finance: '#047857', Academic: '#6d28d9', Compliance: '#b45309', Transport: '#0e7490', IT: '#4338ca', Sports: '#c2410c' }
+const sourceColors = { local: '#d1fae5', gdrive: '#e5e7eb', onedrive: '#bfdbfe' }
+const sourceTextColors = { local: '#047857', gdrive: '#6b7280', onedrive: '#1d4ed8' }
 
 function fmtDate(ts) {
   if (!ts) return '—'
@@ -62,12 +64,28 @@ export default function Admin() {
   const [syncingId, setSyncingId] = useState(null)
   const [selectedIds, setSelectedIds] = useState(new Set())
   const [fileSearch, setFileSearch] = useState('')
+  const [deptFilter, setDeptFilter] = useState('All')
+  const [filePage, setFilePage] = useState(1)
+  const FILE_PAGE_SIZE = 10
 
   const filteredFiles = useMemo(() => {
     const q = fileSearch.trim().toLowerCase()
-    if (!q) return files
-    return files.filter((f) => (f.name || '').toLowerCase().includes(q) || (f.department || '').toLowerCase().includes(q))
-  }, [files, fileSearch])
+    return files.filter((f) => {
+      const matchesDept = deptFilter === 'All' || (f.department || 'Unclassified') === deptFilter
+      if (!matchesDept) return false
+      if (!q) return true
+      return (f.name || '').toLowerCase().includes(q) || (f.department || '').toLowerCase().includes(q)
+    })
+  }, [files, fileSearch, deptFilter])
+
+  const pageFiles = useMemo(
+    () => filteredFiles.slice((filePage - 1) * FILE_PAGE_SIZE, filePage * FILE_PAGE_SIZE),
+    [filteredFiles, filePage],
+  )
+
+  const filePages = Math.max(1, Math.ceil(filteredFiles.length / FILE_PAGE_SIZE))
+
+  useEffect(() => { if (filePage > filePages) setFilePage(filePages) }, [filePage, filePages])
 
   const connectorList = useMemo(() => INITIAL_CONNECTORS.map((c) => ({
     ...c,
@@ -300,11 +318,21 @@ export default function Admin() {
               <input
                 type="text"
                 value={fileSearch}
-                onChange={(e) => setFileSearch(e.target.value)}
+                onChange={(e) => { setFileSearch(e.target.value); setFilePage(1) }}
                 placeholder="Search files…"
                 className="w-40 rounded-lg border border-slate-200 bg-slate-50 py-1.5 pl-8 pr-2 text-xs outline-none focus:border-navy-400"
               />
             </div>
+            <select
+              value={deptFilter}
+              onChange={(e) => { setDeptFilter(e.target.value); setFilePage(1) }}
+              className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1.5 text-xs outline-none focus:border-navy-400"
+            >
+              <option value="All">All departments</option>
+              {DEPT_ORDER.filter((d) => files.some((f) => (f.department || 'Unclassified') === d)).map((d) => (
+                <option key={d}>{d}</option>
+              ))}
+            </select>
             {selectedIds.size > 0 && (
               <Button size="sm" variant="dangerOutline" onClick={deleteSelected}>
                 <Trash2 className="h-3.5 w-3.5" /> Delete {selectedIds.size}
@@ -320,7 +348,9 @@ export default function Admin() {
         ) : files.length === 0 ? (
           <div className="px-5 py-8 text-center text-sm text-slate-400">No files uploaded. Click Upload to add documents.</div>
         ) : filteredFiles.length === 0 ? (
-          <div className="px-5 py-8 text-center text-sm text-slate-400">No files match “{fileSearch}”.</div>
+          <div className="px-5 py-8 text-center text-sm text-slate-400">
+            No files match{fileSearch.trim() ? ` “${fileSearch}”` : ` ${deptFilter}`}.
+          </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[700px] text-left text-sm">
@@ -331,13 +361,16 @@ export default function Admin() {
                   </th>
                   <th className="px-2 py-2.5">Name</th>
                   <th className="px-3 py-2.5">Department</th>
+                  <th className="px-5 py-2.5">Source</th>
                   <th className="px-5 py-2.5">Uploaded</th>
                   <th className="px-3 py-2.5" />
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {filteredFiles.map((f) => {
+                {pageFiles.map((f) => {
                   const badge = deptBadge(f.department)
+                  const source = sourceColors[f.source || 'local']
+                  const sourceText = sourceTextColors[f.source || 'local']
                   return (
                     <tr key={f.id} className={`hover:bg-slate-50/80 ${selectedIds.has(f.id) ? 'bg-navy-50/40' : ''}`}>
                       <td className="w-10 px-2 py-3 text-center">
@@ -346,6 +379,9 @@ export default function Admin() {
                       <td className="max-w-[320px] truncate px-2 py-3 font-medium text-slate-800" title={f.name}>{f.name}</td>
                       <td className="px-3 py-3">
                         <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium" style={{ backgroundColor: badge.bg, color: badge.text }}>{badge.label}</span>
+                      </td>
+                      <td className="px-3 py-3">
+                        <span className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium" style={{ backgroundColor: source, color: sourceText }}>{f.source || 'local'}</span>
                       </td>
                       <td className="px-5 py-3 text-xs text-slate-500">{fmtDate(f.uploaded_at)}</td>
                       <td className="px-3 py-3">
@@ -358,6 +394,21 @@ export default function Admin() {
                 })}
               </tbody>
             </table>
+          </div>
+        )}
+        {filteredFiles.length > FILE_PAGE_SIZE && (
+          <div className="flex items-center justify-between border-t border-slate-100 px-5 py-3">
+            <p className="text-xs text-slate-400">
+              {filteredFiles.length} files · page {filePage} of {filePages}
+            </p>
+            <div className="flex gap-2">
+              <Button size="sm" variant="secondary" disabled={filePage <= 1} onClick={() => setFilePage((p) => Math.max(1, p - 1))}>
+                Previous
+              </Button>
+              <Button size="sm" variant="secondary" disabled={filePage >= filePages} onClick={() => setFilePage((p) => Math.min(filePages, p + 1))}>
+                Next
+              </Button>
+            </div>
           </div>
         )}
       </Card>
@@ -410,7 +461,11 @@ export default function Admin() {
       </Modal>
 
       <Modal open={uploadOpen} onClose={handleUploadClose} title="Upload files">
-        <FileUpload onUploaded={(name) => toast(`Uploaded ${name}`, 'success')} onClose={handleUploadClose} />
+        <FileUpload
+          onUploaded={(name) => toast(`Uploaded ${name}`, 'success')}
+          onClose={handleUploadClose}
+          existingNames={files.map((f) => f.name)}
+        />
       </Modal>
     </div>
   )

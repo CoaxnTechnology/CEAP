@@ -5,6 +5,7 @@ import os
 import shutil
 import time
 import tempfile
+from sqlalchemy import func
 from flask import Blueprint, request, jsonify, current_app, make_response, send_file
 from app.auth_helpers import login_required
 from app.db import SessionLocal
@@ -54,6 +55,26 @@ def api_upload():
     ext = os.path.splitext(file.filename)[1].lower()
     if ext not in SUPPORTED_EXTS:
         return jsonify({"success": False, "error": f"Unsupported type: {ext}"}), 400
+
+    user_key = current_user_key()
+    db = SessionLocal()
+    try:
+        dup = (
+            db.query(Document)
+            .filter(
+                Document.user_key == user_key,
+                func.lower(Document.name) == file.filename.strip().lower(),
+                Document.source == "local",
+            )
+            .first()
+        )
+        if dup:
+            return jsonify({
+                "success": False,
+                "error": f"“{file.filename}” is already uploaded. Delete it from Uploaded Files first, or upload with a different name.",
+            }), 409
+    finally:
+        db.close()
 
     with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
         file.save(tmp.name)

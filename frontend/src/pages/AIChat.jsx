@@ -57,7 +57,7 @@ export default function AIChat() {
   const location = useLocation()
   const navigate = useNavigate()
   const { dispatch, toast, user, activeAgent } = useApp()
-  const [activeDept, setActiveDept] = useState(activeAgent ? (agentDeptMap[activeAgent.id] || 'general') : 'hr')
+  const [activeDept, setActiveDept] = useState(activeAgent ? (agentDeptMap[activeAgent.id] || 'general') : 'general')
   const [activeConv, setActiveConv] = useState(null)
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
@@ -117,21 +117,6 @@ export default function AIChat() {
     .filter((m) => m.role === 'assistant' && m.sources?.length)
     .flatMap((m) => m.sources)
     .filter((c, i, arr) => arr.findIndex((x) => (x.id || x.file_id) === (c.id || c.file_id)) === i)
-
-  function openSource(s) {
-    toast(`Viewing ${s.name || s.source || 'citation'}`, 'info')
-    navigate(`/document/${s.file_id || s.id || ''}`, {
-      state: {
-        doc: {
-          id: s.file_id || s.id,
-          title: s.name || s.source,
-          department: s.source,
-          status: 'Current',
-          snippet: s.text || s.excerpt || '',
-        },
-      },
-    })
-  }
 
   function appendReply(result) {
     setMessages((prev) => [...prev, {
@@ -544,14 +529,9 @@ id: uuidCounter++,
               )}
               {sourcesUsed.map((s, i) => (
                 <li key={`${s.file_id || ''}-${s.chunk_index ?? i}`}>
-                  <button
-                    type="button"
-                    onClick={() => openSource(s)}
-                    className="w-full rounded-lg border border-slate-100 bg-slate-50/80 px-3 py-2 text-left hover:border-navy-200"
-                  >
-                    <p className="text-xs font-semibold text-slate-800">{s.name || s.source}</p>
-                    <p className="text-[10px] text-navy-600">{s.source}</p>
-                  </button>
+                  <p className="truncate rounded-lg border border-slate-100 bg-slate-50/80 px-3 py-2 text-xs font-semibold text-slate-800">
+                    {s.name || s.source}
+                  </p>
                 </li>
               ))}
             </ul>

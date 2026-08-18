@@ -4,26 +4,38 @@ import Button from './Button'
 
 const API_BASE = import.meta.env.VITE_API_URL || ''
 
-export default function FileUpload({ onUploaded, onClose, uploadUrl = '/api/upload' }) {
+export default function FileUpload({ onUploaded, onClose, uploadUrl = '/api/upload', existingNames = [] }) {
   const [dragOver, setDragOver] = useState(false)
   const [files, setFiles] = useState([])
   const [uploading, setUploading] = useState(false)
+  const [currentFile, setCurrentFile] = useState(null)
+  const [stage, setStage] = useState('uploading')
   const [error, setError] = useState(null)
   const inputRef = useRef(null)
 
   const addFiles = useCallback((list) => {
     setError(null)
+    const existing = new Set(existingNames.map((n) => n.trim().toLowerCase()))
     const valid = []
+    const dups = []
     for (const f of list) {
-      const ext = '.' + f.name.split('.').pop().toLowerCase()
+      const name = f.name.trim()
+      const ext = '.' + name.split('.').pop().toLowerCase()
+      if (existing.has(name.toLowerCase())) {
+        dups.push(name)
+        continue
+      }
       if (!['.pdf', '.docx', '.pptx', '.xlsx', '.xls', '.csv', '.txt'].includes(ext)) {
         setError(`Unsupported format: ${f.name}`)
         continue
       }
       valid.push(f)
     }
+    if (dups.length) {
+      setError(`${dups.join(', ')} already uploaded. Duplicates were skipped.`)
+    }
     setFiles((prev) => [...prev, ...valid])
-  }, [])
+  }, [existingNames])
 
   function removeFile(i) {
     setFiles((prev) => prev.filter((_, idx) => idx !== i))
@@ -33,11 +45,16 @@ export default function FileUpload({ onUploaded, onClose, uploadUrl = '/api/uplo
     if (!files.length) return
     setUploading(true)
     setError(null)
+    setCurrentFile(files[0].name)
+    setStage('uploading')
     const errs = []
-    for (const f of files) {
+    for (let i = 0; i < files.length; i++) {
+      const f = files[i]
+      setCurrentFile(f.name)
       const fd = new FormData()
       fd.append('file', f)
       try {
+        setStage(i === 0 ? 'uploading' : 'indexing')
         const res = await fetch(`${API_BASE}${uploadUrl}`, {
           method: 'POST', body: fd, credentials: 'include',
         })
@@ -46,6 +63,7 @@ export default function FileUpload({ onUploaded, onClose, uploadUrl = '/api/uplo
           throw new Error(data.error || `HTTP ${res.status}`)
         }
         onUploaded?.(f.name)
+        setStage('indexing')
       } catch (err) {
         errs.push(`${f.name}: ${err.message}`)
       }
@@ -95,6 +113,20 @@ export default function FileUpload({ onUploaded, onClose, uploadUrl = '/api/uplo
             </li>
           ))}
         </ul>
+      )}
+
+      {uploading && (
+        <div className="space-y-2 rounded-lg bg-slate-50 px-3 py-3">
+          <div className="flex items-center justify-between gap-2 text-xs">
+            <span className="font-medium text-slate-600">{currentFile || 'Uploading…'}</span>
+            <span className="text-slate-400">
+              {stage === 'uploading' ? 'Uploading…' : 'Indexing — making it searchable…'}
+            </span>
+          </div>
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-slate-200">
+            <div className={`h-full rounded-full bg-navy-600 transition-all duration-700 ${stage === 'uploading' ? 'w-1/3 animate-pulse' : 'w-2/3 animate-pulse'}`} />
+          </div>
+        </div>
       )}
 
       <div className="flex justify-end gap-2">

@@ -134,6 +134,11 @@ def _build_source_payload(top_chunks: list, registry: dict) -> list:
 
         entry = registry.get(chunk["file_id"], {})
         text = (chunk.get("text") or "").strip()
+        # Only show sources that have a file on disk (can be viewed/opened).
+        # Excludes gdrive / imported docs without a local copy so the
+        # "Sources used" panel stays consistent with what the user can access.
+        if not entry.get("file_path"):
+            continue
         sources.append(
             {
                 "file_id": chunk["file_id"],
@@ -150,19 +155,32 @@ def _build_source_payload(top_chunks: list, registry: dict) -> list:
     return sources
 
 
-def _fallback_response(top_chunks: list, registry: dict, label: str) -> dict:
-    source_payload = _build_source_payload(top_chunks, registry)
-    raw = top_chunks[0].get('text', '')
-    first_line = raw.strip().split('\n')[0] if raw.strip() else '(no text)'
+def _get_unique_file_ids(top_chunks: list) -> set:
+    """Return the set of distinct file_ids found in the top chunks."""
+    return {c["file_id"] for c in top_chunks}
+
+
+def _file_options(unique_fids: set, registry: dict) -> list:
+    """Build a short options list for the file-select prompt."""
+    options = []
+    for fid in sorted(unique_fids, key=lambda f: registry.get(f, {}).get("name", "")):
+        entry = registry.get(fid, {})
+        name = entry.get("name") or fid
+        dept = entry.get("department") or ""
+        options.append(f"{name} (dept: {dept})")
+    return options
+
+
+def _select_file_response(question: str, options: list) -> dict:
+    """Return a response that prompts the user to pick a file before answering."""
+    opts = "; ".join(options) if options else "no files"
     return {
         "response": (
-            f"{label}\n\n"
-            f"I found a matching document but couldn't generate a full answer. "
-            f"**Preview:** _{first_line}_\n\n"
-            f"Try again shortly or check the document directly in your files."
+            f"I found this question could relate to multiple documents: {opts}. "
+            "Please tell me which file you'd like me to use, or upload the specific document and ask again."
         ),
-        "sources": source_payload,
-        "chunks_used": len(top_chunks),
+        "sources": [],
+        "chunks_used": 0,
         "timestamp": time.time(),
     }
 
@@ -397,6 +415,13 @@ def api_chat():
                 current_app.logger.info("[api_chat] dept-scoped empty; fell back to global search: %s", [c.get("source") for c in top_chunks][:8])
         current_app.logger.info("[api_chat] top_chunks=%d sources=%s", len(top_chunks), [c.get("source") for c in top_chunks][:8])
 
+    # ponytail: if multiple files are relevant, ask the user to pick one instead
+    # of letting the AI guess. This avoids answering from the wrong document.
+    unique_fids = _get_unique_file_ids(top_chunks)
+    if len(unique_fids) > 1 and route["needs_rag"]:
+        options = _file_options(unique_fids, registry)
+        return _select_file_response(question, options)
+
     recent = history[-(MAX_HISTORY_TURNS * 2):]
     history_block = ""
     if recent:
@@ -620,6 +645,13 @@ def api_chat_stream():
                 top_fid, top_n = fid_counts.most_common(1)[0]
                 if top_n >= len(top_chunks) / 2:
                     file_ids = [top_fid]
+
+        # ponytail: if multiple files are relevant, ask the user to pick one
+        # instead of letting the AI guess from the chunks.
+        unique_fids = _get_unique_file_ids(top_chunks)
+        if len(unique_fids) > 1 and wants_rag:
+            options = _file_options(unique_fids, registry)
+            return _select_file_response(question, options)
 
     recent = history[-(MAX_HISTORY_TURNS * 2):]
     history_block = ""
