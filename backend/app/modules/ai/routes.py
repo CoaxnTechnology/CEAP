@@ -66,28 +66,14 @@ def _resolve_chat_source_filter(
 
     Returns None to search all indexed docs, or a list of file_ids to restrict to.
     An empty list means nothing matched — callers must not widen to a global search.
+
+    ponytail: department only selects the tool set, never the retrieval scope —
+    scoping RAG to one department hides a user's other docs (the UI defaults to
+    'hr', so medical/finance spreadsheets became invisible). Search everything.
     """
     if file_ids:
         return [fid for fid in file_ids if fid in registry and fid in indexed_file_ids]
-
-    if not department or department == "general":
-        return None
-
-    db = SessionLocal()
-    try:
-        base = db.query(Document.file_id).filter(Document.user_key == user_key)
-        dept_ids = [r[0] for r in base.filter(Document.department == department).all()]
-        if department == "hr":
-            policy_ids = [
-                r[0]
-                for r in base.filter(
-                    Document.name.ilike("%policy%") | Document.name.ilike("%leave%")
-                ).all()
-            ]
-            dept_ids = list(set(dept_ids + policy_ids))
-        return [fid for fid in dept_ids if fid in indexed_file_ids]
-    finally:
-        db.close()
+    return None
 
 
 def _resolve_session(user_key: str, session_id: str | None):
@@ -366,7 +352,10 @@ def api_chat():
 
     context = ""
     top_chunks = []
-    wants_rag = bool(file_ids) or route["needs_rag"]
+    # ponytail: always attempt RAG when data is indexed. The classifier's
+    # needs_rag=False for a specific department (e.g. 'hr') would otherwise
+    # hide the user's docs; the dept-scoped filter + fallback handles scoping.
+    wants_rag = bool(indexed_file_ids) or bool(file_ids) or route["needs_rag"]
     if wants_rag and indexed_file_ids:
         source_filter = _resolve_chat_source_filter(
             user_key, file_ids, department, registry, indexed_file_ids
@@ -396,6 +385,16 @@ def api_chat():
                     file_ids = [top_fid]
         except EmbeddingServiceError:
             top_chunks = []
+        # ponytail: department scoping is a soft preference. If it yields nothing,
+        # fall back to a global search so the user's docs are never hidden by the
+        # default department (e.g. 'hr') when the data lives in another one.
+        if not top_chunks and source_filter is not None:
+            try:
+                top_chunks = store.search(question, top_k=RAGConfig.TOP_K, source_filter=None)
+            except EmbeddingServiceError:
+                top_chunks = []
+            if top_chunks:
+                current_app.logger.info("[api_chat] dept-scoped empty; fell back to global search: %s", [c.get("source") for c in top_chunks][:8])
         current_app.logger.info("[api_chat] top_chunks=%d sources=%s", len(top_chunks), [c.get("source") for c in top_chunks][:8])
 
     recent = history[-(MAX_HISTORY_TURNS * 2):]
@@ -495,6 +494,7 @@ def api_chat():
             text = synthesis.get("text") or _summarize_tool_results(tool_calls)
 
     except GeminiServiceError as exc:
+        current_app.logger.warning("[api_chat] LLM unavailable: %s", exc)
         if top_chunks:
             response = _fallback_response(
                 top_chunks, registry,
@@ -579,7 +579,10 @@ def api_chat_stream():
 
     context = ""
     top_chunks = []
-    wants_rag = bool(file_ids) or route["needs_rag"]
+    # ponytail: always attempt RAG when data is indexed. The classifier's
+    # needs_rag=False for a specific department (e.g. 'hr') would otherwise
+    # hide the user's docs; the dept-scoped filter + fallback handles scoping.
+    wants_rag = bool(indexed_file_ids) or bool(file_ids) or route["needs_rag"]
     if wants_rag and indexed_file_ids:
         source_filter = _resolve_chat_source_filter(
             user_key, file_ids, department, registry, indexed_file_ids
@@ -594,6 +597,16 @@ def api_chat_stream():
             )
         except EmbeddingServiceError:
             top_chunks = []
+        # ponytail: department scoping is a soft preference. If it yields nothing,
+        # fall back to a global search so the user's docs are never hidden by the
+        # default department (e.g. 'hr') when the data lives in another one.
+        if not top_chunks and source_filter is not None:
+            try:
+                top_chunks = store.search(question, top_k=RAGConfig.TOP_K, source_filter=None)
+            except EmbeddingServiceError:
+                top_chunks = []
+            if top_chunks:
+                current_app.logger.info("[api_chat_stream] dept-scoped empty; fell back to global search: %s", [c.get("source") for c in top_chunks][:8])
         current_app.logger.info("[api_chat_stream] top_chunks=%d sources=%s", len(top_chunks), [c.get("source") for c in top_chunks][:8])
         if top_chunks:
             context = "\n\n".join(
@@ -791,7 +804,8 @@ ANSWER:"""
             })
             yield f"event: done\ndata: {done_data}\n\n"
 
-        except GeminiServiceError:
+        except GeminiServiceError as exc:
+            current_app.logger.warning("[api_chat_stream] LLM unavailable: %s", exc)
             fallback = _fallback_response(
                 top_chunks, registry,
                 "[AI temporarily unavailable. Showing the top retrieved passage instead.]"
