@@ -145,6 +145,58 @@ def _select_file_response(question: str, options: list) -> dict:
     }
 
 
+def _resolve_file_selection(question: str, registry: dict, indexed_file_ids: set) -> str | None:
+    """Resolve a file-selection reply to a file_id.
+
+    Matches: exact filename-with-extension mentioned anywhere in the reply
+    ("use Shipments.csv", "what is in Shipments.csv?"), a verb-prefixed
+    selection ("use the shipments file"), or a short bare-name reply
+    ("Shipments"). Deliberately strict: a content question like "how many
+    shipments are in transit?" must NOT auto-scope to Shipments.csv.
+    """
+    if not question or not registry:
+        return None
+    q = question.strip().lower()
+    if len(q) > 60:
+        return None
+
+    verb_hit = re.match(r"^(?:please\s+)?(?:use|select|pick|choose|read|open|analyze|look\s+at|from|with|the)\s+(?:file\s+)?(.+)$", q)
+    candidate = verb_hit.group(1).strip() if verb_hit else None
+
+    def clean(n):
+        s = re.sub(r"\.(?:csv|xlsx?|pdf|txt)$", "", n.lower()).strip()
+        return re.sub(r"\s+(file|document)$", "", s).strip()
+
+    for fid, entry in registry.items():
+        name = (entry.get("name") or "").strip()
+        if not name or fid not in indexed_file_ids:
+            continue
+        name_l = name.lower()
+        # Filename with extension mentioned anywhere (strong signal).
+        if name_l in q:
+            return fid
+        # Verb-prefixed selection matching the name/stem.
+        if candidate and clean(candidate) == clean(name):
+            return fid
+        # Short bare-name reply that IS the file ("Shipments" or "Shipments.csv").
+        if len(q) <= 30 and (q == name_l or clean(q) == clean(name)):
+            return fid
+    return None
+
+
+def _recover_pending_question(user_key: str, session_id: str) -> str | None:
+    """Return the last user question from the session, so a file-selection
+    reply can re-answer the question that triggered the ambiguity prompt."""
+    try:
+        msgs = list_chat_messages(user_key, session_id)
+    except Exception:
+        return None
+    for m in reversed(msgs):
+        if m.get("role") == "user" and m.get("content", "").strip():
+            return m["content"].strip()
+    return None
+
+
 def _fallback_response(top_chunks: list, registry: dict, label: str) -> dict:
     source_payload = _build_source_payload(top_chunks, registry)
     raw = top_chunks[0].get('text', '') if top_chunks else ''
@@ -359,6 +411,20 @@ def api_chat():
     indexed_file_ids = store.indexed_file_ids()
     current_app.logger.info("[api_chat] user_key=%s indexed_files=%d store.count=%d", user_key, len(indexed_file_ids), store.count())
 
+    # ponytail: a follow-up like "use Shipments.csv" is a file selection, not a
+    # new question. Resolve it to the file and re-answer the original question
+    # so the ambiguity prompt doesn't loop. Only rewrite the question when the
+    # reply is selection-shaped (short, no '?'); a real question like "what's
+    # in Shipments.csv?" just scopes to that file as-is.
+    if not file_ids:
+        selected = _resolve_file_selection(question, registry, indexed_file_ids)
+        if selected:
+            file_ids = [selected]
+            if "?" not in question and len(question.strip()) <= 60:
+                pending = _recover_pending_question(user_key, chat_session["session_id"])
+                if pending:
+                    question = pending
+
     route = classify(question, department)
     session_ctx = ""
     from flask import session as _session
@@ -397,7 +463,10 @@ def api_chat():
             if top_chunks and not file_ids:
                 options = _ambiguous_files(store, question, registry, indexed_file_ids, source_filter)
                 if options:
-                    return _select_file_response(question, options)
+                    prompt = _select_file_response(question, options)
+                    append_chat_message(user_key, "user", question, session_id=chat_session["session_id"])
+                    append_chat_message(user_key, "assistant", prompt["response"], sources=[], session_id=chat_session["session_id"])
+                    return prompt
             # ponytail: no explicit file selection, but the retrieved chunks are
             # dominated by one file -> treat it as file-scoped so the spreadsheet
             # tool answers counts exactly instead of a chunked RAG guess.
@@ -595,6 +664,20 @@ def api_chat_stream():
     indexed_file_ids = store.indexed_file_ids()
     current_app.logger.info("[api_chat_stream] user_key=%s indexed_files=%d store.count=%d", user_key, len(indexed_file_ids), store.count())
 
+    # ponytail: a follow-up like "use Shipments.csv" is a file selection, not a
+    # new question. Resolve it to the file and re-answer the original question
+    # so the ambiguity prompt doesn't loop. Only rewrite the question when the
+    # reply is selection-shaped (short, no '?'); a real question like "what's
+    # in Shipments.csv?" just scopes to that file as-is.
+    if not file_ids:
+        selected = _resolve_file_selection(question, registry, indexed_file_ids)
+        if selected:
+            file_ids = [selected]
+            if "?" not in question and len(question.strip()) <= 60:
+                pending = _recover_pending_question(user_key, chat_session["session_id"])
+                if pending:
+                    question = pending
+
     route = classify(question, department)
     session_ctx = ""
     from flask import session as _session
@@ -642,7 +725,10 @@ def api_chat_stream():
         if not file_ids:
             options = _ambiguous_files(store, question, registry, indexed_file_ids, source_filter)
             if options:
-                return _select_file_response(question, options)
+                prompt = _select_file_response(question, options)
+                append_chat_message(user_key, "user", question, session_id=chat_session["session_id"])
+                append_chat_message(user_key, "assistant", prompt["response"], sources=[], session_id=chat_session["session_id"])
+                return prompt
 
         if top_chunks:
             context = "\n\n".join(
