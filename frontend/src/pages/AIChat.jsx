@@ -64,6 +64,8 @@ export default function AIChat() {
   const [input, setInput] = useState('')
   const [isTyping, setIsTyping] = useState(false)
   const abortRef = useRef(null)
+  const messagesCacheRef = useRef({})
+  const loadedForRef = useRef(null)
   const [sessionId, setSessionId] = useState(null)
   const [sessions, setSessions] = useState([])
   const bottomRef = useRef(null)
@@ -88,6 +90,12 @@ export default function AIChat() {
   }, [location.state])
 
   useEffect(() => {
+    if (loadedForRef.current === sessionId && sessionId) {
+      messagesCacheRef.current[sessionId] = messages
+    }
+  }, [messages, sessionId])
+
+  useEffect(() => {
     api('/api/chat/sessions')
       .then((data) => {
         setSessions(data.sessions || [])
@@ -102,20 +110,27 @@ export default function AIChat() {
   }, [])
 
   function loadMessages(sessionId) {
+    const cached = messagesCacheRef.current[sessionId]
+    if (cached) {
+      loadedForRef.current = sessionId
+      setMessages(cached)
+      return Promise.resolve()
+    }
     return api(`/api/chat/session?session_id=${sessionId}`)
       .then((data) => {
-        if (data?.messages?.length > 0) {
-          setMessages(data.messages.map((m) => ({
-            id: m.message_id,
-            role: m.role,
-            content: m.content,
-            sources: m.sources || [],
-          })))
-        } else {
-          setMessages([])
-        }
+        const msgs = data?.messages?.length > 0
+          ? data.messages.map((m) => ({
+              id: m.message_id,
+              role: m.role,
+              content: m.content,
+              sources: m.sources || [],
+            }))
+          : []
+        messagesCacheRef.current[sessionId] = msgs
+        loadedForRef.current = sessionId
+        setMessages(msgs)
       })
-      .catch(() => {})
+      .catch(() => setMessages([]))
   }
 
   function clearAgent() {
@@ -269,6 +284,7 @@ id: uuidCounter++,
     api('/api/chat/sessions', { method: 'POST', body: '{}' })
       .then((data) => {
         setSessionId(data.session.session_id)
+        loadedForRef.current = data.session.session_id
         setSessions((prev) => [data.session, ...prev])
         toast('Started a new conversation', 'info')
       })
@@ -341,20 +357,7 @@ id: uuidCounter++,
                     onClick={() => {
                       setActiveConv(s.session_id)
                       setSessionId(s.session_id)
-                      api(`/api/chat/session?session_id=${s.session_id}`)
-                        .then((data) => {
-                          if (data?.messages?.length > 0) {
-                            setMessages(data.messages.map((m) => ({
-                              id: m.message_id,
-                              role: m.role,
-                              content: m.content,
-                              sources: m.sources || [],
-                            })))
-                          } else {
-                            setMessages([])
-                          }
-                        })
-                        .catch(() => setMessages([]))
+                      loadMessages(s.session_id)
                     }}
                     className={`w-full rounded-lg px-2.5 py-2.5 text-left transition ${
                       activeConv === s.session_id ? 'bg-navy-50' : 'hover:bg-slate-50'
