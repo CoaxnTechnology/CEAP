@@ -125,26 +125,30 @@ export default function AIChat() {
       content: result.response || '',
       sources: result.sources || [],
       suggestions: result.suggestions || [],
+      selectableFiles: result.selectable_files || [],
     }])
   }
 
-  async function streamChat(content) {
+  async function streamChat(content, fileIds) {
     const tempId = uuidCounter++
-    setMessages((prev) => [...prev, { id: tempId, role: 'assistant', content: '', sources: [], suggestions: [] }])
+    setMessages((prev) => [...prev, { id: tempId, role: 'assistant', content: '', sources: [], suggestions: [], selectableFiles: [] }])
     const agentScope = activeAgent ? `${activeAgent.name}: ${activeAgent.scope}` : undefined
+
+    const body = { question: content, session_id: sessionId, department: activeDept, agent_scope: agentScope }
+    if (fileIds?.length) body.file_ids = fileIds
 
     const res = await fetch('/api/chat/stream', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
-      body: JSON.stringify({ question: content, session_id: sessionId, department: activeDept, agent_scope: agentScope }),
+      body: JSON.stringify(body),
     })
 
     const isSse = (res.headers.get('content-type') || '').includes('text/event-stream')
     if (!isSse || !res.body) {
       const data = await res.json().catch(() => ({}))
       setMessages((prev) => prev.map((m) => (m.id === tempId
-        ? { ...m, content: data.response || data.error || 'Sorry, I encountered an error. Please try again.' }
+        ? { ...m, content: data.response || data.error || 'Sorry, I encountered an error. Please try again.', selectableFiles: data.selectable_files || [] }
         : m)))
       return
     }
@@ -188,7 +192,7 @@ export default function AIChat() {
     }
   }
 
-  async function handleSend(text) {
+  async function handleSend(text, fileIds) {
     const content = (text ?? input).trim()
     if (!content) return
     setInput('')
@@ -205,11 +209,12 @@ export default function AIChat() {
             session_id: sessionId,
             department: activeDept,
             agent_scope: agentScope,
+            ...(fileIds?.length ? { file_ids: fileIds } : {}),
           }),
         })
         appendReply(result)
       } else {
-        await streamChat(content)
+        await streamChat(content, fileIds)
       }
       dispatch({
         type: 'ADD_ACTIVITY',
@@ -440,7 +445,7 @@ id: uuidCounter++,
                 </div>
               </div>
             )}
-            {messages.map((msg) => (
+            {messages.map((msg, mi) => (
               <div
                 key={msg.id}
                 className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
@@ -459,6 +464,24 @@ id: uuidCounter++,
                       <div className="rounded-2xl rounded-bl-md border border-slate-100 bg-slate-50 px-4 py-3 text-sm leading-relaxed text-slate-700">
                         <MessageBody text={msg.content} />
                       </div>
+                      {msg.selectableFiles?.length > 0 && (
+                        <div className="flex flex-wrap gap-2 pl-1">
+                          {msg.selectableFiles.map((f) => (
+                            <button
+                              key={f.file_id}
+                              type="button"
+                              disabled={isTyping}
+                              onClick={() => {
+                                const orig = [...messages.slice(0, mi)].reverse().find((m) => m.role === 'user')
+                                handleSend(orig?.content || msg.content, [f.file_id])
+                              }}
+                              className="rounded-full border border-navy-200 bg-white px-3 py-1.5 text-xs font-medium text-navy-700 hover:border-navy-400 hover:bg-navy-50 disabled:opacity-50"
+                            >
+                              {f.name}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                       {msg.suggestions?.length > 0 && (
                         <div className="flex flex-wrap gap-2 pl-1">
                           {msg.suggestions.map((q, i) => (

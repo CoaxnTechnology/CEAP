@@ -120,20 +120,22 @@ def _get_unique_file_ids(top_chunks: list) -> set:
     return {c["file_id"] for c in top_chunks}
 
 
-def _file_options(unique_fids: set, registry: dict) -> list:
-    """Build a short options list for the file-select prompt."""
-    options = []
+def _file_choices(unique_fids: set, registry: dict) -> list:
+    """Structured file options (file_id + name + department) for the prompt."""
+    choices = []
     for fid in sorted(unique_fids, key=lambda f: registry.get(f, {}).get("name", "")):
         entry = registry.get(fid, {})
-        name = entry.get("name") or fid
-        dept = entry.get("department") or ""
-        options.append(f"{name} (dept: {dept})")
-    return options
+        choices.append({
+            "file_id": fid,
+            "name": entry.get("name") or fid,
+            "department": entry.get("department") or "",
+        })
+    return choices
 
 
 def _select_file_response(question: str, options: list) -> dict:
     """Return a response that prompts the user to pick a file before answering."""
-    opts = "; ".join(options) if options else "no files"
+    opts = "; ".join(f"{c['name']} (dept: {c['department']})" for c in options) if options else "no files"
     return {
         "response": (
             f"I found this question could relate to multiple documents: {opts}. "
@@ -142,6 +144,7 @@ def _select_file_response(question: str, options: list) -> dict:
         "sources": [],
         "chunks_used": 0,
         "timestamp": time.time(),
+        "selectable_files": options,
     }
 
 
@@ -238,7 +241,7 @@ def _ambiguous_files(
     current_app.logger.info("[ambig] pool=%d fids=%d %s", len(pool), len(fids), [registry.get(f, {}).get("name", f)[:30] for f in fids][:5])
     if len(fids) < 2:
         return None
-    return _file_options(fids, registry)
+    return _file_choices(fids, registry)
 
 
 def _clean_tool_refs(text: str) -> str:
