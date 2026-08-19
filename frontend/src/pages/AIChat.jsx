@@ -12,6 +12,7 @@ import {
   Plus,
   ChevronRight,
   Trash2,
+  Square,
 } from 'lucide-react'
 import Card from '../components/ui/Card'
 import Button from '../components/ui/Button'
@@ -62,6 +63,7 @@ export default function AIChat() {
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
   const [isTyping, setIsTyping] = useState(false)
+  const abortRef = useRef(null)
   const [sessionId, setSessionId] = useState(null)
   const [sessions, setSessions] = useState([])
   const bottomRef = useRef(null)
@@ -92,10 +94,15 @@ export default function AIChat() {
         if (data.sessions?.length > 0) {
           setActiveConv(data.sessions[0].session_id)
           setSessionId(data.sessions[0].session_id)
-          return api(`/api/chat/session?session_id=${data.sessions[0].session_id}`)
+          return loadMessages(data.sessions[0].session_id)
         }
         return null
       })
+      .catch(() => {})
+  }, [])
+
+  function loadMessages(sessionId) {
+    return api(`/api/chat/session?session_id=${sessionId}`)
       .then((data) => {
         if (data?.messages?.length > 0) {
           setMessages(data.messages.map((m) => ({
@@ -104,10 +111,12 @@ export default function AIChat() {
             content: m.content,
             sources: m.sources || [],
           })))
+        } else {
+          setMessages([])
         }
       })
       .catch(() => {})
-  }, [])
+  }
 
   function clearAgent() {
     dispatch({ type: 'SET_ACTIVE_AGENT', payload: null })
@@ -142,6 +151,7 @@ export default function AIChat() {
       headers: { 'Content-Type': 'application/json' },
       credentials: 'include',
       body: JSON.stringify(body),
+      signal: abortRef.current?.signal,
     })
 
     const isSse = (res.headers.get('content-type') || '').includes('text/event-stream')
@@ -160,7 +170,14 @@ export default function AIChat() {
     const patch = (fn) => setMessages((prev) => prev.map((m) => (m.id === tempId ? fn(m) : m)))
 
     for (;;) {
-      const { done, value } = await reader.read()
+      let chunk
+      try {
+        chunk = await reader.read()
+      } catch {
+        if (abortRef.current?.signal.aborted) break
+        throw err
+      }
+      const { done, value } = chunk
       if (done) break
       buffer += decoder.decode(value, { stream: true })
       const blocks = buffer.split('\n\n')
@@ -198,6 +215,7 @@ export default function AIChat() {
     setInput('')
     setMessages((prev) => [...prev, { id: uuidCounter++, role: 'user', content }])
     setIsTyping(true)
+    abortRef.current = new AbortController()
 
     const agentScope = activeAgent ? `${activeAgent.name}: ${activeAgent.scope}` : undefined
     try {
@@ -235,8 +253,14 @@ id: uuidCounter++,
         content: 'Sorry, I encountered an error. Please try again.',
       }])
     } finally {
+      abortRef.current = null
       setIsTyping(false)
     }
+  }
+
+  function stopResponse() {
+    abortRef.current?.abort()
+    setIsTyping(false)
   }
 
   function newChat() {
@@ -363,6 +387,7 @@ id: uuidCounter++,
                           if (data?.current_session_id) {
                             setActiveConv(data.current_session_id)
                             setSessionId(data.current_session_id)
+                            loadMessages(data.current_session_id)
                           }
                         })
                         .catch(() => toast('Failed to delete session', 'error'))
@@ -526,13 +551,24 @@ id: uuidCounter++,
                 placeholder="Ask anything about school knowledge..."
                 className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-navy-400 focus:bg-white focus:ring-2 focus:ring-navy-100"
               />
-              <button
-                type="submit"
-                disabled={!input.trim() || isTyping}
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-navy-900 text-white hover:bg-navy-800 disabled:opacity-40"
-              >
-                <Send className="h-4 w-4" />
-              </button>
+              {isTyping ? (
+                <button
+                  type="button"
+                  onClick={stopResponse}
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-red-600 text-white hover:bg-red-700"
+                  aria-label="Stop generating"
+                >
+                  <Square className="h-4 w-4 fill-current" />
+                </button>
+              ) : (
+                <button
+                  type="submit"
+                  disabled={!input.trim()}
+                  className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-navy-900 text-white hover:bg-navy-800 disabled:opacity-40"
+                >
+                  <Send className="h-4 w-4" />
+                </button>
+              )}
             </form>
           </div>
         </div>
