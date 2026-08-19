@@ -200,6 +200,23 @@ def _recover_pending_question(user_key: str, session_id: str) -> str | None:
     return None
 
 
+def _recover_context_file(user_key: str, session_id: str) -> str | None:
+    """Return the file_id most recently cited in the session's answers, so a
+    short follow-up ('show me pending task') stays scoped to the file the user
+    just picked instead of re-triggering the ambiguity prompt."""
+    try:
+        msgs = list_chat_messages(user_key, session_id)
+    except Exception:
+        return None
+    for m in reversed(msgs):
+        if m.get("role") == "assistant":
+            sources = m.get("sources") or []
+            fids = {s.get("file_id") for s in sources if s.get("file_id")}
+            if len(fids) == 1:
+                return fids.pop()
+    return None
+
+
 def _fallback_response(top_chunks: list, registry: dict, label: str) -> dict:
     source_payload = _build_source_payload(top_chunks, registry)
     raw = top_chunks[0].get('text', '') if top_chunks else ''
@@ -427,6 +444,13 @@ def api_chat():
                 pending = _recover_pending_question(user_key, chat_session["session_id"])
                 if pending:
                     question = pending
+        # ponytail: a short follow-up ("show me pending task") that names no file
+        # stays scoped to the file the previous answer cited, instead of re-asking
+        # which of N files to use.
+        elif "?" not in question and len(question.strip()) <= 60:
+            ctx = _recover_context_file(user_key, chat_session["session_id"])
+            if ctx and ctx in indexed_file_ids:
+                file_ids = [ctx]
 
     route = classify(question, department)
     session_ctx = ""
@@ -680,6 +704,13 @@ def api_chat_stream():
                 pending = _recover_pending_question(user_key, chat_session["session_id"])
                 if pending:
                     question = pending
+        # ponytail: a short follow-up ("show me pending task") that names no file
+        # stays scoped to the file the previous answer cited, instead of re-asking
+        # which of N files to use.
+        elif "?" not in question and len(question.strip()) <= 60:
+            ctx = _recover_context_file(user_key, chat_session["session_id"])
+            if ctx and ctx in indexed_file_ids:
+                file_ids = [ctx]
 
     route = classify(question, department)
     session_ctx = ""
