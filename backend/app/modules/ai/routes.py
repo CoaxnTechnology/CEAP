@@ -82,46 +82,6 @@ def _resolve_session(user_key: str, session_id: str | None):
     return ensure_chat_session(user_key, None)
 
 
-def _detect_referenced_files(question: str, registry: dict) -> list:
-    """Match file names mentioned in the question (typo-tolerant) so RAG scopes
-    to that file even when the user didn't tick the file chip."""
-    import difflib
-    import re
-
-    if not question or not registry:
-        return []
-    q = question.lower()
-    hits = []
-    for fid, entry in registry.items():
-        name = (entry.get("name") or "").strip()
-        if not name:
-            continue
-        stem = re.sub(r"\.(xlsx?|csv|pdf|txt)$", "", name).lower()
-        stem_norm = re.sub(r"[^a-z0-9]+", "", stem)
-        stem_words = [re.sub(r"[^a-z0-9]+", "", w) for w in stem.split()]
-        stem_words = [w for w in stem_words if len(w) >= 4]
-        q_norm = re.sub(r"[^a-z0-9]+", "", q)
-        if stem_norm and stem_norm in q_norm:
-            hits.append(fid)
-            continue
-        # fuzzy: word-level match for typos like "betogater" -> "betogather"
-        for word in q.split():
-            w = re.sub(r"[^a-z0-9]+", "", word.lower())
-            if w and len(w) >= 4:
-                for sw in stem_words:
-                    if (
-                        w == sw
-                        or sw.startswith(w)
-                        or difflib.SequenceMatcher(None, w, sw).ratio() >= 0.85
-                    ):
-                        hits.append(fid)
-                        break
-                else:
-                    continue
-                break
-    return hits
-
-
 def _build_source_payload(top_chunks: list, registry: dict) -> list:
     sources = []
     seen = set()
@@ -183,6 +143,50 @@ def _select_file_response(question: str, options: list) -> dict:
         "chunks_used": 0,
         "timestamp": time.time(),
     }
+
+
+def _fallback_response(top_chunks: list, registry: dict, label: str) -> dict:
+    source_payload = _build_source_payload(top_chunks, registry)
+    raw = top_chunks[0].get('text', '') if top_chunks else ''
+    first_line = raw.strip().split('\n')[0] if raw.strip() else '(no text)'
+    return {
+        "response": (
+            f"{label}\n\n"
+            f"I found a matching document but couldn't generate a full answer. "
+            f"**Preview:** _{first_line}_\n\n"
+            f"Try again shortly or check the document directly in your files."
+        ),
+        "sources": source_payload,
+        "chunks_used": len(top_chunks),
+        "timestamp": time.time(),
+    }
+
+
+def _ambiguous_files(
+    store,
+    question: str,
+    registry: dict,
+    indexed_file_ids: set,
+    source_filter,
+) -> list | None:
+    """Detect if a question spans multiple indexed files via a wide search.
+
+    Returns the file options list when the top-18 pool mixes >=2 real files,
+    else None. TOP_K=6 is too narrow — it clusters on a single dominant file
+    (e.g. Shipments.csv vs Logistics_Testing_Data.xlsx), hiding ambiguity.
+    """
+    try:
+        pool = store.search(question, top_k=RAGConfig.TOP_K * 3, source_filter=source_filter)
+    except EmbeddingServiceError:
+        return None
+    if not pool:
+        current_app.logger.info("[ambig] no pool for %r", question[:60])
+        return None
+    fids = _get_unique_file_ids(pool)
+    current_app.logger.info("[ambig] pool=%d fids=%d %s", len(pool), len(fids), [registry.get(f, {}).get("name", f)[:30] for f in fids][:5])
+    if len(fids) < 2:
+        return None
+    return _file_options(fids, registry)
 
 
 def _clean_tool_refs(text: str) -> str:
@@ -355,12 +359,6 @@ def api_chat():
     indexed_file_ids = store.indexed_file_ids()
     current_app.logger.info("[api_chat] user_key=%s indexed_files=%d store.count=%d", user_key, len(indexed_file_ids), store.count())
 
-    if not file_ids:
-        file_ids = [
-            fid for fid in _detect_referenced_files(question, registry)
-            if fid in indexed_file_ids
-        ]
-
     route = classify(question, department)
     session_ctx = ""
     from flask import session as _session
@@ -370,6 +368,7 @@ def api_chat():
 
     context = ""
     top_chunks = []
+    source_filter = None
     # ponytail: always attempt RAG when data is indexed. The classifier's
     # needs_rag=False for a specific department (e.g. 'hr') would otherwise
     # hide the user's docs; the dept-scoped filter + fallback handles scoping.
@@ -391,6 +390,14 @@ def api_chat():
                     f"--- Source: {c['source']} (chunk {c['chunk_index']}) ---\n{c['text']}"
                     for c in top_chunks
                 )
+            # ponytail: if multiple files are relevant, ask the user to pick one
+            # instead of letting the AI guess. Run BEFORE the dominant-file
+            # auto-detection below, which would otherwise narrow to one file and
+            # skip the prompt. Uses a wide pool because TOP_K=6 clusters on one.
+            if top_chunks and not file_ids:
+                options = _ambiguous_files(store, question, registry, indexed_file_ids, source_filter)
+                if options:
+                    return _select_file_response(question, options)
             # ponytail: no explicit file selection, but the retrieved chunks are
             # dominated by one file -> treat it as file-scoped so the spreadsheet
             # tool answers counts exactly instead of a chunked RAG guess.
@@ -414,13 +421,6 @@ def api_chat():
             if top_chunks:
                 current_app.logger.info("[api_chat] dept-scoped empty; fell back to global search: %s", [c.get("source") for c in top_chunks][:8])
         current_app.logger.info("[api_chat] top_chunks=%d sources=%s", len(top_chunks), [c.get("source") for c in top_chunks][:8])
-
-    # ponytail: if multiple files are relevant, ask the user to pick one instead
-    # of letting the AI guess. This avoids answering from the wrong document.
-    unique_fids = _get_unique_file_ids(top_chunks)
-    if len(unique_fids) > 1 and route["needs_rag"]:
-        options = _file_options(unique_fids, registry)
-        return _select_file_response(question, options)
 
     recent = history[-(MAX_HISTORY_TURNS * 2):]
     history_block = ""
@@ -604,6 +604,7 @@ def api_chat_stream():
 
     context = ""
     top_chunks = []
+    source_filter = None
     # ponytail: always attempt RAG when data is indexed. The classifier's
     # needs_rag=False for a specific department (e.g. 'hr') would otherwise
     # hide the user's docs; the dept-scoped filter + fallback handles scoping.
@@ -633,6 +634,16 @@ def api_chat_stream():
             if top_chunks:
                 current_app.logger.info("[api_chat_stream] dept-scoped empty; fell back to global search: %s", [c.get("source") for c in top_chunks][:8])
         current_app.logger.info("[api_chat_stream] top_chunks=%d sources=%s", len(top_chunks), [c.get("source") for c in top_chunks][:8])
+
+        # ponytail: if multiple files are relevant, ask the user to pick one
+        # instead of letting the AI guess. Run BEFORE the dominant-file
+        # auto-detection below, which would otherwise narrow to one file and
+        # skip the prompt. Uses a wide pool because TOP_K=6 clusters on one file.
+        if not file_ids:
+            options = _ambiguous_files(store, question, registry, indexed_file_ids, source_filter)
+            if options:
+                return _select_file_response(question, options)
+
         if top_chunks:
             context = "\n\n".join(
                 f"--- Source: {c['source']} (chunk {c['chunk_index']}) ---\n{c['text']}"
@@ -645,13 +656,6 @@ def api_chat_stream():
                 top_fid, top_n = fid_counts.most_common(1)[0]
                 if top_n >= len(top_chunks) / 2:
                     file_ids = [top_fid]
-
-        # ponytail: if multiple files are relevant, ask the user to pick one
-        # instead of letting the AI guess from the chunks.
-        unique_fids = _get_unique_file_ids(top_chunks)
-        if len(unique_fids) > 1 and wants_rag:
-            options = _file_options(unique_fids, registry)
-            return _select_file_response(question, options)
 
     recent = history[-(MAX_HISTORY_TURNS * 2):]
     history_block = ""
