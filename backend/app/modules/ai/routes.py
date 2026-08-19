@@ -217,6 +217,17 @@ def _recover_context_file(user_key: str, session_id: str) -> str | None:
     return None
 
 
+def _ctx_relevant(store, question: str, ctx_file_id: str) -> bool:
+    """True if the cited file still surfaces in a wide search for the follow-up,
+    so a short new-topic question ('show me pending task' after discussing a
+    medical file) isn't force-scoped to the old file."""
+    try:
+        pool = store.search(question, top_k=RAGConfig.TOP_K * 3, source_filter=None)
+    except EmbeddingServiceError:
+        return False
+    return ctx_file_id in _get_unique_file_ids(pool)
+
+
 def _fallback_response(top_chunks: list, registry: dict, label: str) -> dict:
     source_payload = _build_source_payload(top_chunks, registry)
     raw = top_chunks[0].get('text', '') if top_chunks else ''
@@ -448,16 +459,15 @@ def api_chat():
         # that names no file stays scoped to the file the previous answer cited
         # — as long as that file is still relevant to the follow-up. If it no
         # longer surfaces in the search, fall through to normal ambiguity
-        # detection instead of force-scoping to an unrelated file.
+        # detection instead of force-scoping to an unrelated file. A deictic
+        # reference ("what's in this file?") is about that file by definition,
+        # so it skips the similarity gate — a vague "this file" query embeds
+        # nowhere near the cited file's chunks and would wrongly drift away.
         elif len(question.strip()) <= 60:
             ctx = _recover_context_file(user_key, chat_session["session_id"])
             if ctx and ctx in indexed_file_ids:
-                try:
-                    pool = store.search(question, top_k=RAGConfig.TOP_K * 3, source_filter=None)
-                    pool_fids = _get_unique_file_ids(pool)
-                except EmbeddingServiceError:
-                    pool_fids = set()
-                if ctx in pool_fids:
+                deictic = bool(re.search(r"\b(this|that|the|above)\s+(file|document|spreadsheet|sheet)\b", question.lower()))
+                if deictic or _ctx_relevant(store, question, ctx):
                     file_ids = [ctx]
 
     route = classify(question, department)
@@ -716,16 +726,15 @@ def api_chat_stream():
         # that names no file stays scoped to the file the previous answer cited
         # — as long as that file is still relevant to the follow-up. If it no
         # longer surfaces in the search, fall through to normal ambiguity
-        # detection instead of force-scoping to an unrelated file.
+        # detection instead of force-scoping to an unrelated file. A deictic
+        # reference ("what's in this file?") is about that file by definition,
+        # so it skips the similarity gate — a vague "this file" query embeds
+        # nowhere near the cited file's chunks and would wrongly drift away.
         elif len(question.strip()) <= 60:
             ctx = _recover_context_file(user_key, chat_session["session_id"])
             if ctx and ctx in indexed_file_ids:
-                try:
-                    pool = store.search(question, top_k=RAGConfig.TOP_K * 3, source_filter=None)
-                    pool_fids = _get_unique_file_ids(pool)
-                except EmbeddingServiceError:
-                    pool_fids = set()
-                if ctx in pool_fids:
+                deictic = bool(re.search(r"\b(this|that|the|above)\s+(file|document|spreadsheet|sheet)\b", question.lower()))
+                if deictic or _ctx_relevant(store, question, ctx):
                     file_ids = [ctx]
 
     route = classify(question, department)
