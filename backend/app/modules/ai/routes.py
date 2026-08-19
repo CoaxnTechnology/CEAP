@@ -444,13 +444,21 @@ def api_chat():
                 pending = _recover_pending_question(user_key, chat_session["session_id"])
                 if pending:
                     question = pending
-        # ponytail: a short follow-up ("show me pending task") that names no file
-        # stays scoped to the file the previous answer cited, instead of re-asking
-        # which of N files to use.
-        elif "?" not in question and len(question.strip()) <= 60:
+        # ponytail: a short follow-up ("which category has the highest count?")
+        # that names no file stays scoped to the file the previous answer cited
+        # — as long as that file is still relevant to the follow-up. If it no
+        # longer surfaces in the search, fall through to normal ambiguity
+        # detection instead of force-scoping to an unrelated file.
+        elif len(question.strip()) <= 60:
             ctx = _recover_context_file(user_key, chat_session["session_id"])
             if ctx and ctx in indexed_file_ids:
-                file_ids = [ctx]
+                try:
+                    pool = store.search(question, top_k=RAGConfig.TOP_K * 3, source_filter=None)
+                    pool_fids = _get_unique_file_ids(pool)
+                except EmbeddingServiceError:
+                    pool_fids = set()
+                if ctx in pool_fids:
+                    file_ids = [ctx]
 
     route = classify(question, department)
     session_ctx = ""
@@ -704,13 +712,21 @@ def api_chat_stream():
                 pending = _recover_pending_question(user_key, chat_session["session_id"])
                 if pending:
                     question = pending
-        # ponytail: a short follow-up ("show me pending task") that names no file
-        # stays scoped to the file the previous answer cited, instead of re-asking
-        # which of N files to use.
-        elif "?" not in question and len(question.strip()) <= 60:
+        # ponytail: a short follow-up ("which category has the highest count?")
+        # that names no file stays scoped to the file the previous answer cited
+        # — as long as that file is still relevant to the follow-up. If it no
+        # longer surfaces in the search, fall through to normal ambiguity
+        # detection instead of force-scoping to an unrelated file.
+        elif len(question.strip()) <= 60:
             ctx = _recover_context_file(user_key, chat_session["session_id"])
             if ctx and ctx in indexed_file_ids:
-                file_ids = [ctx]
+                try:
+                    pool = store.search(question, top_k=RAGConfig.TOP_K * 3, source_filter=None)
+                    pool_fids = _get_unique_file_ids(pool)
+                except EmbeddingServiceError:
+                    pool_fids = set()
+                if ctx in pool_fids:
+                    file_ids = [ctx]
 
     route = classify(question, department)
     session_ctx = ""
