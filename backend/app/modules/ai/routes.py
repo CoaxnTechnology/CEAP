@@ -927,7 +927,9 @@ def api_chat_stream():
                 )
             else:
                 msg = "I couldn't find relevant content in your saved documents for that question. Try rephrasing it or asking about a specific document."
-            yield f"event: done\ndata: {json.dumps({'response': msg, 'sources': [], 'chunks_used': 0, 'session_id': sid})}\n\n"
+            append_chat_message(user_key, "user", question, session_id=sid)
+            assistant_msg_id = append_chat_message(user_key, "assistant", msg, sources=[], session_id=sid)
+            yield f"event: done\ndata: {json.dumps({'response': msg, 'sources': [], 'chunks_used': 0, 'session_id': sid, 'message_id': assistant_msg_id})}\n\n"
             return
 
         prompt = f"""You are CEAP for Schools, an expert school document analyst AI.
@@ -965,7 +967,9 @@ ANSWER:"""
                     yield f"event: token\ndata: {json.dumps(cleaned)}\n\n"
 
             if not saw_first_token:
-                yield f"event: done\ndata: {json.dumps({'response': '', 'sources': source_payload, 'chunks_used': len(top_chunks), 'session_id': sid})}\n\n"
+                append_chat_message(user_key, "user", question, session_id=sid)
+                assistant_msg_id = append_chat_message(user_key, "assistant", "I couldn't generate a response. Please try again.", sources=source_payload, session_id=sid)
+                yield f"event: done\ndata: {json.dumps({'response': '', 'sources': source_payload, 'chunks_used': len(top_chunks), 'session_id': sid, 'message_id': assistant_msg_id})}\n\n"
                 return
 
             answer = "".join(full_response)
@@ -991,7 +995,9 @@ ANSWER:"""
                 top_chunks, registry,
                 "[AI temporarily unavailable. Showing the top retrieved passage instead.]"
             )
-            yield f"event: done\ndata: {json.dumps({**fallback, 'session_id': sid})}\n\n"
+            append_chat_message(user_key, "user", question, session_id=sid)
+            assistant_msg_id = append_chat_message(user_key, "assistant", fallback["response"], sources=fallback.get("sources") or source_payload, session_id=sid)
+            yield f"event: done\ndata: {json.dumps({**fallback, 'session_id': sid, 'message_id': assistant_msg_id})}\n\n"
         except Exception as exc:
             yield f"event: error\ndata: {json.dumps({'message': str(exc)})}\n\n"
 
