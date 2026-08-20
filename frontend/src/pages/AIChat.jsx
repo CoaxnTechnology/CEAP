@@ -76,6 +76,7 @@ export default function AIChat() {
   const [indexedDocs, setIndexedDocs] = useState([])
   const [mentionIdx, setMentionIdx] = useState(0)
   const inputRef = useRef(null)
+  const mentionListRef = useRef(null)
 
   useEffect(() => {
     aiChatMounted = true
@@ -394,6 +395,11 @@ id: uuidCounter++,
   }
 
   const mentionOpen = /(^|\s)@[^\s]*$/.test(input) && !input.endsWith(' ')
+  useEffect(() => {
+    if (mentionOpen && mentionListRef.current) {
+      mentionListRef.current.querySelector('[data-active="true"]')?.scrollIntoView({ block: 'nearest' })
+    }
+  }, [mentionIdx, mentionOpen])
   const mentionQuery = mentionOpen ? input.split(/\s+/).pop().slice(1) : ''
   const mentionFiltered = indexedDocs.filter((d) =>
     d.name.toLowerCase().includes(mentionQuery.toLowerCase())
@@ -697,11 +703,12 @@ id: uuidCounter++,
             >
               <div className="relative flex-1">
                 {mentionOpen && mentionFiltered.length > 0 && (
-                  <div className="absolute bottom-full left-0 z-20 mb-2 max-h-48 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg">
+                  <div ref={mentionListRef} className="absolute bottom-full left-0 z-20 mb-2 max-h-48 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg">
                     {mentionFiltered.map((d, i) => (
                       <button
                         key={d.file_id}
                         type="button"
+                        data-active={i === mentionIdx}
                         onMouseDown={(e) => e.preventDefault()}
                         onClick={() => insertMention(d)}
                         className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm ${

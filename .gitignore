@@ -20,3 +20,6 @@ flask_session/
 # Node
 node_modules/
 frontend/dist/
+
+# local test scaffolding
+.opencode-test/

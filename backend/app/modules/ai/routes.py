@@ -147,6 +147,11 @@ def _select_file_response(question: str, options: list) -> dict:
     }
 
 
+def _session_has_messages(user_key: str, session_id: str) -> bool:
+    """True once the session already holds prior messages (not the opening question)."""
+    return bool(list_chat_messages(user_key, session_id))
+
+
 def _resolve_file_selection(question: str, registry: dict, indexed_file_ids: set) -> str | None:
     """Resolve a file-selection reply to a file_id.
 
@@ -514,7 +519,14 @@ def api_chat():
             # instead of letting the AI guess. Run BEFORE the dominant-file
             # auto-detection below, which would otherwise narrow to one file and
             # skip the prompt. Uses a wide pool because TOP_K=6 clusters on one.
-            if top_chunks and not file_ids and not _wants_all_documents(question):
+            # Only on the opening question of a session — a mid-conversation
+            # ambiguous ask should fall through to normal answering.
+            if (
+                top_chunks
+                and not file_ids
+                and not _wants_all_documents(question)
+                and not _session_has_messages(user_key, chat_session["session_id"])
+            ):
                 options = _ambiguous_files(store, question, registry, indexed_file_ids, source_filter)
                 if options:
                     prompt = _select_file_response(question, options)
@@ -793,7 +805,13 @@ def api_chat_stream():
         # instead of letting the AI guess. Run BEFORE the dominant-file
         # auto-detection below, which would otherwise narrow to one file and
         # skip the prompt. Uses a wide pool because TOP_K=6 clusters on one file.
-        if not file_ids and not _wants_all_documents(question):
+        # Only on the opening question of a session — a mid-conversation
+        # ambiguous ask should fall through to normal answering.
+        if (
+            not file_ids
+            and not _wants_all_documents(question)
+            and not _session_has_messages(user_key, chat_session["session_id"])
+        ):
             options = _ambiguous_files(store, question, registry, indexed_file_ids, source_filter)
             if options:
                 prompt = _select_file_response(question, options)
