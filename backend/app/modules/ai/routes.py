@@ -227,6 +227,16 @@ def _ctx_relevant(store, question: str, ctx_file_id: str) -> bool:
     return ctx_file_id in _get_unique_file_ids(pool)
 
 
+def _wants_all_documents(question: str) -> bool:
+    """True when the user explicitly asks to search every document, so the
+    ambiguity prompt and context-file scoping are skipped in favour of a global
+    search ('list the pending items across all documents')."""
+    return bool(re.search(
+        r"\b(across\s+all|all\s+(my\s+)?(documents|docs|files)|every\s+(document|file)|everything)\b",
+        question.lower(),
+    ))
+
+
 def _fallback_response(top_chunks: list, registry: dict, label: str) -> dict:
     source_payload = _build_source_payload(top_chunks, registry)
     raw = top_chunks[0].get('text', '') if top_chunks else ''
@@ -462,7 +472,7 @@ def api_chat():
         # reference ("what's in this file?") is about that file by definition,
         # so it skips the similarity gate — a vague "this file" query embeds
         # nowhere near the cited file's chunks and would wrongly drift away.
-        elif len(question.strip()) <= 60:
+        elif len(question.strip()) <= 60 and not _wants_all_documents(question):
             ctx = _recover_context_file(user_key, chat_session["session_id"])
             if ctx and ctx in indexed_file_ids:
                 deictic = bool(re.search(r"\b(this|that|the|above)\s+(file|document|spreadsheet|sheet)\b", question.lower()))
@@ -504,7 +514,7 @@ def api_chat():
             # instead of letting the AI guess. Run BEFORE the dominant-file
             # auto-detection below, which would otherwise narrow to one file and
             # skip the prompt. Uses a wide pool because TOP_K=6 clusters on one.
-            if top_chunks and not file_ids:
+            if top_chunks and not file_ids and not _wants_all_documents(question):
                 options = _ambiguous_files(store, question, registry, indexed_file_ids, source_filter)
                 if options:
                     prompt = _select_file_response(question, options)
@@ -517,7 +527,7 @@ def api_chat():
             # ponytail: no explicit file selection, but the retrieved chunks are
             # dominated by one file -> treat it as file-scoped so the spreadsheet
             # tool answers counts exactly instead of a chunked RAG guess.
-            if top_chunks and not file_ids:
+            if top_chunks and not file_ids and not _wants_all_documents(question):
                 from collections import Counter
 
                 fid_counts = Counter(c.get("file_id") for c in top_chunks)
@@ -732,7 +742,7 @@ def api_chat_stream():
         # reference ("what's in this file?") is about that file by definition,
         # so it skips the similarity gate — a vague "this file" query embeds
         # nowhere near the cited file's chunks and would wrongly drift away.
-        elif len(question.strip()) <= 60:
+        elif len(question.strip()) <= 60 and not _wants_all_documents(question):
             ctx = _recover_context_file(user_key, chat_session["session_id"])
             if ctx and ctx in indexed_file_ids:
                 deictic = bool(re.search(r"\b(this|that|the|above)\s+(file|document|spreadsheet|sheet)\b", question.lower()))
@@ -783,7 +793,7 @@ def api_chat_stream():
         # instead of letting the AI guess. Run BEFORE the dominant-file
         # auto-detection below, which would otherwise narrow to one file and
         # skip the prompt. Uses a wide pool because TOP_K=6 clusters on one file.
-        if not file_ids:
+        if not file_ids and not _wants_all_documents(question):
             options = _ambiguous_files(store, question, registry, indexed_file_ids, source_filter)
             if options:
                 prompt = _select_file_response(question, options)
@@ -799,7 +809,7 @@ def api_chat_stream():
                 f"--- Source: {c['source']} (chunk {c['chunk_index']}) ---\n{c['text']}"
                 for c in top_chunks
             )
-            if not file_ids:
+            if not file_ids and not _wants_all_documents(question):
                 from collections import Counter
 
                 fid_counts = Counter(c.get("file_id") for c in top_chunks)
