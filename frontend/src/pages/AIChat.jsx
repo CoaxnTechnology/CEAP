@@ -72,6 +72,7 @@ export default function AIChat() {
   const [sessionId, setSessionId] = useState(null)
   const [sessions, setSessions] = useState([])
   const bottomRef = useRef(null)
+  const streamOwnerRef = useRef(false)
 
   useEffect(() => {
     aiChatMounted = true
@@ -98,7 +99,7 @@ export default function AIChat() {
   }, [location.state])
 
   useEffect(() => {
-    if (loadedForRef.current === sessionId && sessionId) {
+    if (loadedForRef.current === sessionId && sessionId && activeStreamSessionId !== sessionId) {
       messagesCacheRef.current[sessionId] = messages
     }
   }, [messages, sessionId])
@@ -118,8 +119,9 @@ export default function AIChat() {
   }, [])
 
   function loadMessages(sessionId) {
+    const streaming = activeStreamSessionId === sessionId
     const cached = messagesCacheRef.current[sessionId]
-    if (cached && activeStreamSessionId !== sessionId) {
+    if (cached?.length && !streaming) {
       loadedForRef.current = sessionId
       setMessages(cached)
       return Promise.resolve()
@@ -138,7 +140,7 @@ export default function AIChat() {
               }
             })
           : []
-        messagesCacheRef.current[sessionId] = msgs
+        if (!streaming) messagesCacheRef.current[sessionId] = msgs
         loadedForRef.current = sessionId
         setMessages(msgs)
       })
@@ -154,7 +156,7 @@ export default function AIChat() {
         loadMessages(sessionId)
         return
       }
-      loadMessages(sessionId)
+      if (!streamOwnerRef.current) loadMessages(sessionId)
     }, 1500)
     return () => {
       if (streamPollTimer) { clearInterval(streamPollTimer); streamPollTimer = null }
@@ -184,6 +186,7 @@ export default function AIChat() {
 
   async function streamChat(content, fileIds) {
     const tempId = uuidCounter++
+    streamOwnerRef.current = true
     activeStreamSessionId = sessionId
     setMessages((prev) => [...prev, { id: tempId, role: 'assistant', content: '', sources: [], suggestions: [], selectableFiles: [] }])
     const agentScope = activeAgent ? `${activeAgent.name}: ${activeAgent.scope}` : undefined
@@ -202,6 +205,7 @@ export default function AIChat() {
     const isSse = (res.headers.get('content-type') || '').includes('text/event-stream')
     if (!isSse || !res.body) {
       activeStreamSessionId = null
+      streamOwnerRef.current = false
       const data = await res.json().catch(() => ({}))
       setMessages((prev) => prev.map((m) => (m.id === tempId
         ? { ...m, content: data.response || data.error || 'Sorry, I encountered an error. Please try again.', selectableFiles: data.selectable_files || [] }
@@ -256,6 +260,7 @@ export default function AIChat() {
       }
     }
     activeStreamSessionId = null
+    streamOwnerRef.current = false
     if (streamPollTimer) { clearInterval(streamPollTimer); streamPollTimer = null }
     if (finalAnswer && !aiChatMounted) {
       notifyAwayUser(content, finalAnswer)
