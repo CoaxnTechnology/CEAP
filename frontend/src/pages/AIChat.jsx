@@ -321,13 +321,15 @@ export default function AIChat() {
     let content = (text ?? input).trim()
     if (!content) return
     const mentionIds = fileIds ? [...fileIds] : []
-    const mentions = [...content.matchAll(/@([\w.\- ]+)/g)].map((m) => m[1].trim()).filter(Boolean)
-    if (mentions.length > 0) {
-      mentions.forEach((name) => {
-        const doc = indexedDocs.find((d) => d.name.toLowerCase() === name.toLowerCase())
-        if (doc && !mentionIds.includes(doc.file_id)) mentionIds.push(doc.file_id)
+    if (indexedDocs.length > 0) {
+      indexedDocs.forEach((doc) => {
+        const re = new RegExp('@' + doc.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
+        if (re.test(content)) {
+          if (!mentionIds.includes(doc.file_id)) mentionIds.push(doc.file_id)
+          content = content.replace(re, ' ')
+        }
       })
-      content = content.replace(/@[\w.\- ]+/g, '').replace(/\s+/g, ' ').trim()
+      content = content.replace(/\s+/g, ' ').trim()
     }
     if (!content) return
     setInput('')
