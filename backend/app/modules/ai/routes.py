@@ -125,9 +125,12 @@ def _file_choices(unique_fids: set, registry: dict) -> list:
     choices = []
     for fid in sorted(unique_fids, key=lambda f: registry.get(f, {}).get("name", "")):
         entry = registry.get(fid, {})
+        name = entry.get("name")
+        if not name:
+            continue
         choices.append({
             "file_id": fid,
-            "name": entry.get("name") or fid,
+            "name": name,
             "department": entry.get("department") or "",
         })
     return choices
@@ -135,12 +138,8 @@ def _file_choices(unique_fids: set, registry: dict) -> list:
 
 def _select_file_response(question: str, options: list) -> dict:
     """Return a response that prompts the user to pick a file before answering."""
-    opts = "; ".join(f"{c['name']} (dept: {c['department']})" for c in options) if options else "no files"
     return {
-        "response": (
-            f"I found this question could relate to multiple documents: {opts}. "
-            "Please tell me which file you'd like me to use, or upload the specific document and ask again."
-        ),
+        "response": "Which file would you like me to use?",
         "sources": [],
         "chunks_used": 0,
         "timestamp": time.time(),
@@ -510,7 +509,10 @@ def api_chat():
                 if options:
                     prompt = _select_file_response(question, options)
                     append_chat_message(user_key, "user", question, session_id=chat_session["session_id"])
-                    append_chat_message(user_key, "assistant", prompt["response"], sources=[], session_id=chat_session["session_id"])
+                    append_chat_message(user_key, "assistant", prompt["response"], sources=[
+                        {"selectable": True, "file_id": c["file_id"], "name": c["name"], "department": c["department"]}
+                        for c in options
+                    ], session_id=chat_session["session_id"])
                     return prompt
             # ponytail: no explicit file selection, but the retrieved chunks are
             # dominated by one file -> treat it as file-scoped so the spreadsheet
@@ -786,7 +788,10 @@ def api_chat_stream():
             if options:
                 prompt = _select_file_response(question, options)
                 append_chat_message(user_key, "user", question, session_id=chat_session["session_id"])
-                append_chat_message(user_key, "assistant", prompt["response"], sources=[], session_id=chat_session["session_id"])
+                append_chat_message(user_key, "assistant", prompt["response"], sources=[
+                    {"selectable": True, "file_id": c["file_id"], "name": c["name"], "department": c["department"]}
+                    for c in options
+                ], session_id=chat_session["session_id"])
                 return prompt
 
         if top_chunks:

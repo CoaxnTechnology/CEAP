@@ -130,6 +130,27 @@ def notifications_get():
         db.close()
 
 
+@settings_bp.route("/api/notifications/create", methods=["POST"])
+@login_required
+def notifications_create():
+    from flask import session
+
+    from app.services.notification_service import create_notification
+
+    data = request.get_json(silent=True) or {}
+    email = session.get("user")
+    if not email:
+        return jsonify({"error": "Not authenticated"}), 401
+    notif = create_notification(
+        user_email=email,
+        notif_type=data.get("type", "info"),
+        title=data.get("title", ""),
+        message=data.get("message", ""),
+        link=data.get("link", ""),
+    )
+    return jsonify({"success": True, "id": notif["id"]})
+
+
 @settings_bp.route("/api/notifications/read", methods=["POST"])
 @login_required
 def notifications_read():

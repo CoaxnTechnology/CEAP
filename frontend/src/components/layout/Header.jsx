@@ -153,7 +153,7 @@ export default function Header({
                             body: JSON.stringify({ ids: [n.id] }),
                           }).catch(() => {})
                           setShowNotifs(false)
-                          navigate('/tasks')
+                          navigate(n.link || '/tasks')
                         }}
                         className={`flex w-full gap-3 px-4 py-3 text-left hover:bg-slate-50 ${
                           n.unread ? 'bg-navy-50/40' : ''

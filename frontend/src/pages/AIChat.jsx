@@ -20,6 +20,9 @@ import Markdown from '../components/ui/Markdown'
 import { api } from '../lib/api'
 import { useApp } from '../context/AppContext'
 let uuidCounter = 0
+let activeStreamSessionId = null
+let streamPollTimer = null
+let aiChatMounted = false
 
 const chatDepartments = [
   { id: 'general', label: 'General', icon: 'MessageSquare' },
@@ -71,6 +74,11 @@ export default function AIChat() {
   const bottomRef = useRef(null)
 
   useEffect(() => {
+    aiChatMounted = true
+    return () => { aiChatMounted = false }
+  }, [])
+
+  useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, isTyping])
 
@@ -111,7 +119,7 @@ export default function AIChat() {
 
   function loadMessages(sessionId) {
     const cached = messagesCacheRef.current[sessionId]
-    if (cached) {
+    if (cached && activeStreamSessionId !== sessionId) {
       loadedForRef.current = sessionId
       setMessages(cached)
       return Promise.resolve()
@@ -119,12 +127,16 @@ export default function AIChat() {
     return api(`/api/chat/session?session_id=${sessionId}`)
       .then((data) => {
         const msgs = data?.messages?.length > 0
-          ? data.messages.map((m) => ({
-              id: m.message_id,
-              role: m.role,
-              content: m.content,
-              sources: m.sources || [],
-            }))
+          ? data.messages.map((m) => {
+              const srcs = m.sources || []
+              return {
+                id: m.message_id,
+                role: m.role,
+                content: m.content,
+                sources: srcs.filter((s) => !s.selectable),
+                selectableFiles: srcs.filter((s) => s.selectable).map(({ selectable, ...f }) => f),
+              }
+            })
           : []
         messagesCacheRef.current[sessionId] = msgs
         loadedForRef.current = sessionId
@@ -132,6 +144,22 @@ export default function AIChat() {
       })
       .catch(() => setMessages([]))
   }
+
+  useEffect(() => {
+    if (!sessionId || activeStreamSessionId !== sessionId) return
+    streamPollTimer = setInterval(async () => {
+      if (activeStreamSessionId !== sessionId) {
+        clearInterval(streamPollTimer)
+        streamPollTimer = null
+        loadMessages(sessionId)
+        return
+      }
+      loadMessages(sessionId)
+    }, 1500)
+    return () => {
+      if (streamPollTimer) { clearInterval(streamPollTimer); streamPollTimer = null }
+    }
+  }, [sessionId])
 
   function clearAgent() {
     dispatch({ type: 'SET_ACTIVE_AGENT', payload: null })
@@ -141,6 +169,7 @@ export default function AIChat() {
     .filter((m) => m.role === 'assistant' && m.sources?.length)
     .flatMap((m) => m.sources)
     .filter((c, i, arr) => arr.findIndex((x) => (x.id || x.file_id) === (c.id || c.file_id)) === i)
+    .filter((s) => !s.selectable)
 
   function appendReply(result) {
     setMessages((prev) => [...prev, {
@@ -155,6 +184,7 @@ export default function AIChat() {
 
   async function streamChat(content, fileIds) {
     const tempId = uuidCounter++
+    activeStreamSessionId = sessionId
     setMessages((prev) => [...prev, { id: tempId, role: 'assistant', content: '', sources: [], suggestions: [], selectableFiles: [] }])
     const agentScope = activeAgent ? `${activeAgent.name}: ${activeAgent.scope}` : undefined
 
@@ -171,6 +201,7 @@ export default function AIChat() {
 
     const isSse = (res.headers.get('content-type') || '').includes('text/event-stream')
     if (!isSse || !res.body) {
+      activeStreamSessionId = null
       const data = await res.json().catch(() => ({}))
       setMessages((prev) => prev.map((m) => (m.id === tempId
         ? { ...m, content: data.response || data.error || 'Sorry, I encountered an error. Please try again.', selectableFiles: data.selectable_files || [] }
@@ -183,6 +214,7 @@ export default function AIChat() {
     let buffer = ''
 
     const patch = (fn) => setMessages((prev) => prev.map((m) => (m.id === tempId ? fn(m) : m)))
+    let finalAnswer = ''
 
     for (;;) {
       let chunk
@@ -208,6 +240,7 @@ export default function AIChat() {
         } else if (event === 'done') {
           let d = {}
           try { d = JSON.parse(dataLine) } catch { /* ignore */ }
+          finalAnswer = d.response ?? ''
           patch((m) => ({
             ...m,
             id: d.message_id || m.id,
@@ -222,6 +255,44 @@ export default function AIChat() {
         }
       }
     }
+    activeStreamSessionId = null
+    if (streamPollTimer) { clearInterval(streamPollTimer); streamPollTimer = null }
+    if (finalAnswer && (!aiChatMounted || document.hidden)) {
+      notifyAwayUser(content, finalAnswer)
+    }
+  }
+
+  function notifyAwayUser(question, answer) {
+    const snippet = question.length > 60 ? question.slice(0, 60) + '\u2026' : question
+    fetch('/api/notifications/create', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({
+        type: 'ai',
+        title: 'AI response ready',
+        message: snippet,
+        link: '/ai/chat',
+      }),
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data?.id) {
+          dispatch({
+            type: 'ADD_NOTIFICATION',
+            payload: {
+              id: data.id,
+              type: 'ai',
+              title: 'AI response ready',
+              message: snippet,
+              link: '/ai/chat',
+              unread: true,
+              time: 'Just now',
+            },
+          })
+        }
+      })
+      .catch(() => {})
   }
 
   async function handleSend(text, fileIds) {
@@ -493,21 +564,25 @@ id: uuidCounter++,
                         <MessageBody text={msg.content} />
                       </div>
                       {msg.selectableFiles?.length > 0 && (
-                        <div className="flex flex-wrap gap-2 pl-1">
-                          {msg.selectableFiles.map((f) => (
-                            <button
-                              key={f.file_id}
-                              type="button"
-                              disabled={isTyping}
-                              onClick={() => {
-                                const orig = [...messages.slice(0, mi)].reverse().find((m) => m.role === 'user')
-                                handleSend(orig?.content || msg.content, [f.file_id])
-                              }}
-                              className="rounded-full border border-navy-200 bg-white px-3 py-1.5 text-xs font-medium text-navy-700 hover:border-navy-400 hover:bg-navy-50 disabled:opacity-50"
-                            >
-                              {f.name}
-                            </button>
-                          ))}
+                        <div className="pl-1">
+                          <ul className="space-y-1.5">
+                            {msg.selectableFiles.map((f) => (
+                              <li key={f.file_id}>
+                                <button
+                                  type="button"
+                                  disabled={isTyping}
+                                  onClick={() => {
+                                    const orig = [...messages.slice(0, mi)].reverse().find((m) => m.role === 'user')
+                                    handleSend(orig?.content || msg.content, [f.file_id])
+                                  }}
+                                  className="flex w-full items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-700 transition hover:border-navy-400 hover:bg-navy-50 hover:text-navy-800 disabled:opacity-50"
+                                >
+                                  <FileText className="h-4 w-4 shrink-0 text-navy-500" />
+                                  <span className="truncate font-medium">{f.name}</span>
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
                         </div>
                       )}
                       {msg.suggestions?.length > 0 && (
