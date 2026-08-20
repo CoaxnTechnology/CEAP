@@ -73,6 +73,9 @@ export default function AIChat() {
   const [sessions, setSessions] = useState([])
   const bottomRef = useRef(null)
   const streamOwnerRef = useRef(false)
+  const [indexedDocs, setIndexedDocs] = useState([])
+  const [mentionIdx, setMentionIdx] = useState(0)
+  const inputRef = useRef(null)
 
   useEffect(() => {
     aiChatMounted = true
@@ -103,6 +106,19 @@ export default function AIChat() {
       messagesCacheRef.current[sessionId] = messages
     }
   }, [messages, sessionId])
+
+  useEffect(() => {
+    api('/api/files')
+      .then((data) => {
+        const files = data.files || {}
+        setIndexedDocs(
+          Object.entries(files)
+            .filter(([, f]) => f.indexed)
+            .map(([file_id, f]) => ({ file_id, name: f.name || file_id }))
+        )
+      })
+      .catch(() => {})
+  }, [])
 
   useEffect(() => {
     api('/api/chat/sessions')
@@ -301,7 +317,17 @@ export default function AIChat() {
   }
 
   async function handleSend(text, fileIds) {
-    const content = (text ?? input).trim()
+    let content = (text ?? input).trim()
+    if (!content) return
+    const mentionIds = fileIds ? [...fileIds] : []
+    const mentions = [...content.matchAll(/@([\w.\- ]+)/g)].map((m) => m[1].trim()).filter(Boolean)
+    if (mentions.length > 0) {
+      mentions.forEach((name) => {
+        const doc = indexedDocs.find((d) => d.name.toLowerCase() === name.toLowerCase())
+        if (doc && !mentionIds.includes(doc.file_id)) mentionIds.push(doc.file_id)
+      })
+      content = content.replace(/@[\w.\- ]+/g, '').replace(/\s+/g, ' ').trim()
+    }
     if (!content) return
     setInput('')
     setMessages((prev) => [...prev, { id: uuidCounter++, role: 'user', content }])
@@ -318,12 +344,12 @@ export default function AIChat() {
             session_id: sessionId,
             department: activeDept,
             agent_scope: agentScope,
-            ...(fileIds?.length ? { file_ids: fileIds } : {}),
+            ...(mentionIds.length ? { file_ids: mentionIds } : {}),
           }),
         })
         appendReply(result)
       } else {
-        await streamChat(content, fileIds)
+        await streamChat(content, mentionIds)
       }
       dispatch({
         type: 'ADD_ACTIVITY',
@@ -365,6 +391,48 @@ id: uuidCounter++,
         toast('Started a new conversation', 'info')
       })
       .catch(() => toast('Could not create session', 'error'))
+  }
+
+  const mentionOpen = /(^|\s)@[^\s]*$/.test(input) && !input.endsWith(' ')
+  const mentionQuery = mentionOpen ? input.split(/\s+/).pop().slice(1) : ''
+  const mentionFiltered = indexedDocs.filter((d) =>
+    d.name.toLowerCase().includes(mentionQuery.toLowerCase())
+  )
+
+  function handleInputChange(value) {
+    setInput(value)
+    if (!/(^|\s)@[^\s]*$/.test(value) || value.endsWith(' ')) {
+      setMentionIdx(0)
+    }
+  }
+
+  function insertMention(doc) {
+    const tokens = input.split(/\s+/)
+    tokens[tokens.length - 1] = `@${doc.name} `
+    setInput(tokens.join(' '))
+    inputRef.current?.focus()
+  }
+
+  function handleInputKeyDown(e) {
+    if (!mentionOpen) return
+    if (e.key === 'Escape') {
+      setMentionIdx(0)
+      return
+    }
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setMentionIdx((i) => (i + 1) % Math.max(mentionFiltered.length, 1))
+      return
+    }
+    if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setMentionIdx((i) => (i - 1 + mentionFiltered.length) % Math.max(mentionFiltered.length, 1))
+      return
+    }
+    if (e.key === 'Enter' && mentionFiltered.length > 0) {
+      e.preventDefault()
+      insertMention(mentionFiltered[Math.min(mentionIdx, mentionFiltered.length - 1)])
+    }
   }
 
   return (
@@ -627,13 +695,35 @@ id: uuidCounter++,
               }}
               className="flex items-end gap-2"
             >
-              <input
-                type="text"
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                placeholder="Ask anything about school knowledge..."
-                className="flex-1 rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-navy-400 focus:bg-white focus:ring-2 focus:ring-navy-100"
-              />
+              <div className="relative flex-1">
+                {mentionOpen && mentionFiltered.length > 0 && (
+                  <div className="absolute bottom-full left-0 z-20 mb-2 max-h-48 w-full overflow-y-auto rounded-xl border border-slate-200 bg-white p-1.5 shadow-lg">
+                    {mentionFiltered.map((d, i) => (
+                      <button
+                        key={d.file_id}
+                        type="button"
+                        onMouseDown={(e) => e.preventDefault()}
+                        onClick={() => insertMention(d)}
+                        className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-sm ${
+                          i === mentionIdx ? 'bg-navy-50 text-navy-800' : 'text-slate-700'
+                        }`}
+                      >
+                        <FileText className="h-4 w-4 shrink-0 text-navy-500" />
+                        <span className="truncate font-medium">{d.name}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <input
+                  ref={inputRef}
+                  type="text"
+                  value={input}
+                  onChange={(e) => handleInputChange(e.target.value)}
+                  onKeyDown={handleInputKeyDown}
+                  placeholder="Ask anything about school knowledge..."
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-navy-400 focus:bg-white focus:ring-2 focus:ring-navy-100"
+                />
+              </div>
               {isTyping ? (
                 <button
                   type="button"
