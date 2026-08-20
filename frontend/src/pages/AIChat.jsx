@@ -257,7 +257,7 @@ export default function AIChat() {
     }
     activeStreamSessionId = null
     if (streamPollTimer) { clearInterval(streamPollTimer); streamPollTimer = null }
-    if (finalAnswer && (!aiChatMounted || document.hidden)) {
+    if (finalAnswer && !aiChatMounted) {
       notifyAwayUser(content, finalAnswer)
     }
   }
