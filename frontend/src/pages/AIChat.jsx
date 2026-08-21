@@ -24,14 +24,6 @@ let activeStreamSessionId = null
 let streamPollTimer = null
 let aiChatMounted = false
 
-const chatDepartments = [
-  { id: 'general', label: 'General', icon: 'MessageSquare' },
-  { id: 'academic', label: 'Academic', icon: 'GraduationCap' },
-  { id: 'hr', label: 'HR', icon: 'Users' },
-  { id: 'finance', label: 'Finance', icon: 'Wallet' },
-  { id: 'admin', label: 'Admin', icon: 'Building2' },
-]
-
 const suggestedFollowUps = [
   'What is the process for applying for maternity leave?',
   'Who approves leave for Heads of Department?',
@@ -46,22 +38,12 @@ const deptIcons = {
   Building2,
 }
 
-const agentDeptMap = {
-  principal: 'admin',
-  teacher: 'academic',
-  finance: 'finance',
-  admissions: 'admin',
-  hr: 'hr',
-  compliance: 'admin',
-  library: 'general',
-  success: 'academic',
-}
-
 export default function AIChat() {
   const location = useLocation()
   const navigate = useNavigate()
-  const { dispatch, toast, user, activeAgent } = useApp()
-  const [activeDept, setActiveDept] = useState(activeAgent ? (agentDeptMap[activeAgent.id] || 'general') : 'general')
+  const { dispatch, toast, user } = useApp()
+  const [activeDept, setActiveDept] = useState('general')
+  const [departments, setDepartments] = useState([])
   const [activeConv, setActiveConv] = useState(null)
   const [messages, setMessages] = useState([])
   const [input, setInput] = useState('')
@@ -75,6 +57,7 @@ export default function AIChat() {
   const streamOwnerRef = useRef(false)
   const [indexedDocs, setIndexedDocs] = useState([])
   const [mentionIdx, setMentionIdx] = useState(0)
+  const [selectedFileIds, setSelectedFileIds] = useState([])
   const inputRef = useRef(null)
   const mentionListRef = useRef(null)
 
@@ -86,12 +69,6 @@ export default function AIChat() {
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, isTyping])
-
-  useEffect(() => {
-    if (activeAgent) {
-      setActiveDept(agentDeptMap[activeAgent.id] || 'general')
-    }
-  }, [activeAgent])
 
   const seededRef = useRef(null)
   useEffect(() => {
@@ -109,13 +86,37 @@ export default function AIChat() {
   }, [messages, sessionId])
 
   useEffect(() => {
+    api('/api/departments')
+      .then((d) => setDepartments(d.departments || []))
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    const dept = location.state?.dept
+    if (dept) setActiveDept(dept.toLowerCase())
+  }, [location.state?.dept])
+
+  useEffect(() => {
+    setSelectedFileIds([])
+  }, [activeDept])
+
+  const chatDepartments = [
+    { id: 'general', label: 'General', icon: 'MessageSquare' },
+    ...departments.map((d) => ({
+      id: d.name.toLowerCase(),
+      label: d.name,
+      icon: 'Building2',
+    })),
+  ]
+
+  useEffect(() => {
     api('/api/files')
       .then((data) => {
         const files = data.files || {}
         setIndexedDocs(
           Object.entries(files)
             .filter(([, f]) => f.indexed)
-            .map(([file_id, f]) => ({ file_id, name: f.name || file_id }))
+            .map(([file_id, f]) => ({ file_id, name: f.name || file_id, department: (f.department || '').toLowerCase() }))
         )
       })
       .catch(() => {})
@@ -180,10 +181,6 @@ export default function AIChat() {
     }
   }, [sessionId])
 
-  function clearAgent() {
-    dispatch({ type: 'SET_ACTIVE_AGENT', payload: null })
-  }
-
   const sourcesUsed = messages
     .filter((m) => m.role === 'assistant' && m.sources?.length)
     .flatMap((m) => m.sources)
@@ -206,9 +203,7 @@ export default function AIChat() {
     streamOwnerRef.current = true
     activeStreamSessionId = sessionId
     setMessages((prev) => [...prev, { id: tempId, role: 'assistant', content: '', sources: [], suggestions: [], selectableFiles: [] }])
-    const agentScope = activeAgent ? `${activeAgent.name}: ${activeAgent.scope}` : undefined
-
-    const body = { question: content, session_id: sessionId, department: activeDept, agent_scope: agentScope }
+    const body = { question: content, session_id: sessionId, department: activeDept }
     if (fileIds?.length) body.file_ids = fileIds
 
     const res = await fetch('/api/chat/stream', {
@@ -320,7 +315,8 @@ export default function AIChat() {
   async function handleSend(text, fileIds) {
     let content = (text ?? input).trim()
     if (!content) return
-    const mentionIds = fileIds ? [...fileIds] : []
+    const baseIds = [...(fileIds ? [...fileIds] : []), ...selectedFileIds]
+    const mentionIds = [...new Set(baseIds)]
     if (indexedDocs.length > 0) {
       indexedDocs.forEach((doc) => {
         const re = new RegExp('@' + doc.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi')
@@ -337,23 +333,8 @@ export default function AIChat() {
     setIsTyping(true)
     abortRef.current = new AbortController()
 
-    const agentScope = activeAgent ? `${activeAgent.name}: ${activeAgent.scope}` : undefined
     try {
-      if (agentScope) {
-        const result = await api('/api/chat', {
-          method: 'POST',
-          body: JSON.stringify({
-            question: content,
-            session_id: sessionId,
-            department: activeDept,
-            agent_scope: agentScope,
-            ...(mentionIds.length ? { file_ids: mentionIds } : {}),
-          }),
-        })
-        appendReply(result)
-      } else {
-        await streamChat(content, mentionIds)
-      }
+      await streamChat(content, mentionIds)
       dispatch({
         type: 'ADD_ACTIVITY',
         payload: {
@@ -402,8 +383,9 @@ id: uuidCounter++,
       mentionListRef.current.querySelector('[data-active="true"]')?.scrollIntoView({ block: 'nearest' })
     }
   }, [mentionIdx, mentionOpen])
+  const deptDocs = activeDept === 'general' ? indexedDocs : indexedDocs.filter((d) => d.department === activeDept)
   const mentionQuery = mentionOpen ? input.split(/\s+/).pop().slice(1) : ''
-  const mentionFiltered = indexedDocs.filter((d) =>
+  const mentionFiltered = deptDocs.filter((d) =>
     d.name.toLowerCase().includes(mentionQuery.toLowerCase())
   )
 
@@ -472,8 +454,7 @@ id: uuidCounter++,
                     type="button"
                     onClick={() => {
                       setActiveDept(d.id)
-                      if (activeAgent) dispatch({ type: 'SET_ACTIVE_AGENT', payload: null })
-                      toast(`Context: ${d.label}`, 'info')
+                      toast(`${d.label} — answers from ${d.label} docs only`, 'info')
                     }}
                     className={`flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm font-medium transition ${
                       activeDept === d.id
@@ -561,34 +542,17 @@ id: uuidCounter++,
         <div className="flex min-h-0 flex-col rounded-xl border border-slate-200/80 bg-white shadow-sm lg:col-span-6">
           <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
             <div className="flex items-center gap-2">
-              <div
-                className="flex h-8 w-8 items-center justify-center rounded-lg text-white"
-                style={{ backgroundColor: activeAgent?.color || '#1e3a5f' }}
-              >
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-navy-900 text-white">
                 <Sparkles className="h-4 w-4" />
               </div>
               <div>
-                <p className="text-sm font-semibold text-slate-900">
-                  {activeAgent?.name || 'CEAP Assistant'}
-                </p>
+                <p className="text-sm font-semibold text-slate-900">CEAP Assistant</p>
                 <p className="text-[11px] text-slate-400">
-                  {activeAgent
-                    ? activeAgent.scope
-                    : `Context: ${chatDepartments.find((d) => d.id === activeDept)?.label || 'General'} knowledge`}
+                  {`Context: ${chatDepartments.find((d) => d.id === activeDept)?.label || 'General'} — answers from ${chatDepartments.find((d) => d.id === activeDept)?.label || 'General'} docs only`}
                 </p>
               </div>
             </div>
             <div className="flex items-center gap-2">
-              {activeAgent && (
-                <button
-                  type="button"
-                  onClick={clearAgent}
-                  className="rounded-lg px-2 py-1 text-[11px] font-medium text-navy-600 hover:bg-navy-50"
-                  title="Clear agent context"
-                >
-                  General
-                </button>
-              )}
               <button
                 type="button"
                 onClick={() => {
@@ -644,28 +608,6 @@ id: uuidCounter++,
                       <div className="rounded-2xl rounded-bl-md border border-slate-100 bg-slate-50 px-4 py-3 text-sm leading-relaxed text-slate-700">
                         <MessageBody text={msg.content} />
                       </div>
-                      {msg.selectableFiles?.length > 0 && (
-                        <div className="pl-1">
-                          <ul className="space-y-1.5">
-                            {msg.selectableFiles.map((f) => (
-                              <li key={f.file_id}>
-                                <button
-                                  type="button"
-                                  disabled={isTyping}
-                                  onClick={() => {
-                                    const orig = [...messages.slice(0, mi)].reverse().find((m) => m.role === 'user')
-                                    handleSend(orig?.content || msg.content, [f.file_id])
-                                  }}
-                                  className="flex w-full items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-left text-sm text-slate-700 transition hover:border-navy-400 hover:bg-navy-50 hover:text-navy-800 disabled:opacity-50"
-                                >
-                                  <FileText className="h-4 w-4 shrink-0 text-navy-500" />
-                                  <span className="truncate font-medium">{f.name}</span>
-                                </button>
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
                       {msg.suggestions?.length > 0 && (
                         <div className="flex flex-wrap gap-2 pl-1">
                           {msg.suggestions.map((q, i) => (
@@ -689,7 +631,7 @@ id: uuidCounter++,
             {isTyping && (
               <div className="flex items-center gap-2 text-sm text-slate-400">
                 <Sparkles className="h-4 w-4 animate-pulse text-navy-400" />
-                CEAP is thinking\u2026
+                CEAP is thinking
               </div>
             )}
             <div ref={bottomRef} />
@@ -757,24 +699,41 @@ id: uuidCounter++,
 
         <aside className="flex min-h-0 flex-col gap-3 lg:col-span-3">
           <Card className="min-h-0 flex-1 overflow-y-auto">
-            <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
-              <FileText className="h-4 w-4 text-navy-600" />
-              Sources used
-            </h3>
-            <p className="mt-1 text-[11px] text-slate-400">
-              Documents cited in this conversation
-            </p>
-            <ul className="mt-3 space-y-2">
-              {sourcesUsed.length === 0 && (
-                <li className="text-xs text-slate-400">No sources yet</li>
+            <div className="flex items-center justify-between">
+              <h3 className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                <FileText className="h-4 w-4 text-navy-600" />
+                Files
+              </h3>
+              {selectedFileIds.length > 0 && (
+                <button type="button" onClick={() => setSelectedFileIds([])} className="text-[11px] font-medium text-navy-600 hover:text-navy-800">Clear</button>
               )}
-              {sourcesUsed.map((s, i) => (
-                <li key={`${s.file_id || ''}-${s.chunk_index ?? i}`}>
-                  <p className="truncate rounded-lg border border-slate-100 bg-slate-50/80 px-3 py-2 text-xs font-semibold text-slate-800">
-                    {s.name || s.source}
-                  </p>
-                </li>
-              ))}
+            </div>
+            <p className="mt-1 text-[11px] text-slate-400">
+              {activeDept === 'general' ? 'All indexed files' : `${chatDepartments.find((d) => d.id === activeDept)?.label || activeDept} files`}
+              {selectedFileIds.length > 0 ? ` · ${selectedFileIds.length} selected` : ''}
+            </p>
+            <p className="mt-1 text-[10px] text-slate-400">Select a file to ask about it. If none selected, asks from all {activeDept === 'general' ? 'files' : `${chatDepartments.find((d) => d.id === activeDept)?.label || activeDept} files`}.</p>
+            <ul className="mt-3 space-y-1.5">
+              {deptDocs.length === 0 && (
+                <li className="text-xs text-slate-400">No files in this department</li>
+              )}
+              {deptDocs.map((f) => {
+                const selected = selectedFileIds.includes(f.file_id)
+                return (
+                  <li key={f.file_id}>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedFileIds((prev) => (prev.includes(f.file_id) ? prev.filter((id) => id !== f.file_id) : [...prev, f.file_id]))}
+                      className={`flex w-full items-center gap-2 truncate rounded-lg border px-3 py-2 text-left text-xs font-medium transition ${
+                        selected ? 'border-navy-300 bg-navy-50 text-navy-900' : 'border-slate-100 bg-slate-50/80 text-slate-800 hover:border-navy-200 hover:bg-navy-50'
+                      }`}
+                    >
+                      <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] ${selected ? 'border-navy-600 bg-navy-600 text-white' : 'border-slate-300 bg-white text-transparent'}`}>✓</span>
+                      <span className="truncate">{f.name}</span>
+                    </button>
+                  </li>
+                )
+              })}
             </ul>
           </Card>
 

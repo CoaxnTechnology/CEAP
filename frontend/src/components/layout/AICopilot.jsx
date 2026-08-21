@@ -1,8 +1,7 @@
-import { useState, useRef } from 'react'
+import { useState, useRef, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Sparkles, X, Send, Square, ChevronRight } from 'lucide-react'
 import { useApp } from '../../context/AppContext'
-import { aiAgents } from '../../data/osData'
 import { api } from '../../lib/api'
 import Markdown from '../ui/Markdown'
 
@@ -13,37 +12,34 @@ const starters = [
   'Inspection readiness status?',
 ]
 
-const agentDeptMap = {
-  principal: 'executive',
-  teacher: 'academic',
-  finance: 'finance',
-  admissions: 'admissions',
-  hr: 'hr',
-  compliance: 'compliance',
-  library: 'knowledge',
-  success: 'students',
-}
-
 export default function AICopilot({ open, onClose }) {
   const { user, toast } = useApp()
   const navigate = useNavigate()
-  const [agent, setAgent] = useState('principal')
+  const [dept, setDept] = useState('general')
+  const [departments, setDepartments] = useState([])
   const [input, setInput] = useState('')
   const [isStopping, setIsStopping] = useState(false)
   const abortRef = useRef(null)
   const [msgs, setMsgs] = useState([
     {
       role: 'assistant',
-      text: `Hi ${user?.name?.split(' ')[0] || 'there'}. I’m your Principal AI — school-wide intelligence with citations. Ask about attendance, risk, fees, compliance, or approvals.`,
+      text: `Hi ${user?.name?.split(' ')[0] || 'there'}. I’m your school assistant — answers come only from the selected department’s documents. Pick a department above.`,
     },
   ])
 
-  const current = aiAgents.find((a) => a.id === agent)
+  useEffect(() => {
+    if (!open) return
+    api('/api/departments')
+      .then((d) => setDepartments(d.departments || []))
+      .catch(() => {})
+  }, [open])
+
+  const deptOptions = [{ id: 'general', name: 'General', code: '' }, ...departments.map((d) => ({ id: d.name.toLowerCase(), name: d.name, code: d.code || '' }))]
+  const currentDept = deptOptions.find((d) => d.id === dept) || deptOptions[0]
 
   function send(text) {
     const q = (text ?? input).trim()
     if (!q) return
-    const a = current
     setMsgs((m) => [...m, { role: 'user', text: q }])
     setMsgs((m) => [...m, { role: 'assistant', text: '…' }])
     setInput('')
@@ -55,8 +51,7 @@ export default function AICopilot({ open, onClose }) {
       body: JSON.stringify({
         question: q,
         want_suggestions: false,
-        department: agentDeptMap[a.id] || 'general',
-        agent_scope: a ? `${a.name}: ${a.scope}` : undefined,
+        department: dept,
       }),
     })
       .then((res) => {
@@ -90,7 +85,7 @@ export default function AICopilot({ open, onClose }) {
           </div>
           <div>
             <p className="text-sm font-semibold text-slate-900">CEAP AI</p>
-            <p className="text-[11px] text-slate-400">{current?.name} · {current?.permissions}</p>
+            <p className="text-[11px] text-slate-400">{currentDept.name} {currentDept.code ? `· ${currentDept.code}` : '· Department'} — documents only</p>
           </div>
         </div>
         <button type="button" onClick={onClose} className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100">
@@ -99,19 +94,19 @@ export default function AICopilot({ open, onClose }) {
       </div>
 
       <div className="flex gap-1 overflow-x-auto border-b border-slate-50 px-3 py-2">
-        {aiAgents.slice(0, 5).map((a) => (
+        {deptOptions.map((d) => (
           <button
-            key={a.id}
+            key={d.id}
             type="button"
             onClick={() => {
-              setAgent(a.id)
-              toast(`Switched to ${a.name}`, 'info')
+              setDept(d.id)
+              toast(`${d.name} — answers from ${d.name} docs only`, 'info')
             }}
             className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-medium ${
-              agent === a.id ? 'bg-navy-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              dept === d.id ? 'bg-navy-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
             }`}
           >
-            {a.name.replace(' AI', '')}
+            {d.name}
           </button>
         ))}
         <button

@@ -1,8 +1,8 @@
-from flask import Blueprint, jsonify, request
+from flask import Blueprint, jsonify, request, make_response
 
 from app.auth_helpers import login_required
 from app.db import SessionLocal
-from app.models import SchoolTarget, Notification
+from app.models import Department, SchoolTarget, Notification, User
 
 settings_bp = Blueprint("settings", __name__)
 
@@ -149,6 +149,28 @@ def notifications_create():
         link=data.get("link", ""),
     )
     return jsonify({"success": True, "id": notif["id"]})
+
+
+@settings_bp.route("/api/departments", methods=["GET"])
+@login_required
+def list_departments():
+    """Dynamic departments for current user's school. General is always implicit."""
+    from flask import session
+    db = SessionLocal()
+    try:
+        email = (session.get("user") or "").strip().lower()
+        user = db.query(User).filter(User.email == email).first() if email else None
+        if not user or not user.school_id:
+            resp = make_response(jsonify({"departments": []}))
+            resp.headers["Cache-Control"] = "no-store"
+            return resp
+        depts = db.query(Department).filter(Department.school_id == user.school_id).order_by(Department.name).all()
+        payload = [{"id": d.id, "name": d.name, "code": d.code or ""} for d in depts]
+        resp = make_response(jsonify({"departments": payload}))
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
+    finally:
+        db.close()
 
 
 @settings_bp.route("/api/notifications/read", methods=["POST"])

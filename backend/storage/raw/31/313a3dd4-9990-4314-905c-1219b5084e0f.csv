@@ -1,0 +1,9 @@
+tracking_number current_location     status estimated_delivery_date
+        Chicago               IL in_transit              2025-09-05
+          Miami               FL    pending              2025-09-10
+          Miami               FL  delivered              2025-09-03
+    Los Angeles               CA in_transit              2025-09-07
+          Miami               FL    pending              2025-09-12
+        Seattle               WA in_transit              2025-09-10
+         London               UK    pending              2025-09-15
+         Sydney        Australia  delivered              2025-09-05

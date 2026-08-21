@@ -64,15 +64,18 @@ def _resolve_chat_source_filter(
 ) -> list | None:
     """Resolve which indexed files RAG may search.
 
-    Returns None to search all indexed docs, or a list of file_ids to restrict to.
-    An empty list means nothing matched — callers must not widen to a global search.
-
-    ponytail: department only selects the tool set, never the retrieval scope —
-    scoping RAG to one department hides a user's other docs (the UI defaults to
-    'hr', so medical/finance spreadsheets became invisible). Search everything.
+    Returns None to search all indexed docs (General), or a list of file_ids to
+    restrict to. An empty list means the department has no docs — callers must
+    not widen to a global search (Q3: hide non-dept docs).
     """
     if file_ids:
         return [fid for fid in file_ids if fid in registry and fid in indexed_file_ids]
+    dept = (department or "").strip().lower()
+    if dept and dept != "general":
+        return [
+            fid for fid, entry in registry.items()
+            if fid in indexed_file_ids and (entry.get("department") or "").strip().lower() == dept
+        ]
     return None
 
 
@@ -283,6 +286,56 @@ def _wants_all_documents(question: str) -> bool:
         r"\b(across\s+all|all\s+(my\s+)?(documents|docs|files)|every\s+(document|file)|everything)\b",
         question.lower(),
     ))
+
+
+def _is_aggregation_question(question: str) -> bool:
+    """True for count/compare questions where excerpt sampling hallucinates
+    ('how many', 'which city has the highest...'). These must be answered with
+    exact spreadsheet stats, not a 6-chunk RAG window."""
+    return bool(re.search(
+        r"\b(how many|how much|count|number of|total|average|sum of|"
+        r"which\s+\w+\s+(has|have)\s+the\s+(highest|lowest|most|least|largest|smallest)|"
+        r"(highest|lowest|most|least)\s+\w+\b)",
+        question.lower(),
+    ))
+
+
+def _spreadsheet_candidates(registry: dict, source_filter, indexed_file_ids: set) -> list:
+    """Spreadsheet file_ids in the current retrieval scope (dept filter or all)."""
+    scope = source_filter if source_filter is not None else indexed_file_ids
+    return [
+        fid for fid in scope
+        if fid in registry
+        and str(registry[fid].get("name") or "").lower().endswith((".xlsx", ".xls", ".csv"))
+    ]
+
+
+def _is_outside_department(question: str, department: str, file_ids: list) -> bool:
+    """True if question is clearly about another department while user is scoped to one.
+    Explicit file_ids (@mention / picker) always wins — not outside."""
+    if file_ids:
+        return False
+    dept_norm = (department or "").strip().lower()
+    if not dept_norm or dept_norm == "general":
+        return False
+    true_route = classify(question, "")
+    if true_route["domains"] == ["general"]:
+        return False
+    dept_to_domain = {
+        "finance": "finance",
+        "hr": "hr",
+        "academic": "academic",
+        "admin": "executive",
+        "compliance": "compliance",
+        "admissions": "admissions",
+        "executive": "executive",
+        "knowledge": "knowledge",
+    }
+    expected = dept_to_domain.get(dept_norm)
+    if not expected:
+        # Custom departments (Transport, IT, Sports, Library) have no keyword domain — don't block
+        return False
+    return expected not in true_route["domains"]
 
 
 def _fallback_response(top_chunks: list, registry: dict, label: str) -> dict:
@@ -502,6 +555,14 @@ def api_chat():
                     file_ids = [ctx]
 
     route = classify(question, department)
+    # Strict dept boundary: don't answer outside-dept questions (Q: finance user asking compliance)
+    if _is_outside_department(question, department, file_ids):
+        dept_label = (department or "").strip()
+        msg = f"This question is outside the **{dept_label}** department. Please switch to **General** or the relevant department to get an answer."
+        append_chat_message(user_key, "user", question, session_id=chat_session["session_id"])
+        aid = append_chat_message(user_key, "assistant", msg, session_id=chat_session["session_id"])
+        return jsonify({"response": msg, "sources": [], "chunks_used": 0, "timestamp": time.time(), "session_id": chat_session["session_id"], "message_id": aid})
+
     session_ctx = ""
     from flask import session as _session
     user_email = _session.get("user", "")
@@ -515,6 +576,8 @@ def api_chat():
     # needs_rag=False for a specific department (e.g. 'hr') would otherwise
     # hide the user's docs; the dept-scoped filter + fallback handles scoping.
     wants_rag = bool(indexed_file_ids) or bool(file_ids) or route["needs_rag"]
+    # Aggregation questions need wider retrieval — 6 chunks under-counts tables.
+    retrieve_k = RAGConfig.TOP_K * 2 if _is_aggregation_question(question) else RAGConfig.TOP_K
     if wants_rag and indexed_file_ids:
         source_filter = _resolve_chat_source_filter(
             user_key, file_ids, department, registry, indexed_file_ids
@@ -524,7 +587,7 @@ def api_chat():
                 []
                 if source_filter is not None and not source_filter
                 else store.search(
-                    question, top_k=RAGConfig.TOP_K, source_filter=source_filter
+                    question, top_k=retrieve_k, source_filter=source_filter
                 )
             )
             if top_chunks:
@@ -532,27 +595,6 @@ def api_chat():
                     f"--- Source: {c['source']} (chunk {c['chunk_index']}) ---\n{c['text']}"
                     for c in top_chunks
                 )
-            # ponytail: if multiple files are relevant, ask the user to pick one
-            # instead of letting the AI guess. Run BEFORE the dominant-file
-            # auto-detection below, which would otherwise narrow to one file and
-            # skip the prompt. Uses a wide pool because TOP_K=6 clusters on one.
-            # Only on the opening question of a session — a mid-conversation
-            # ambiguous ask should fall through to normal answering.
-            if (
-                top_chunks
-                and not file_ids
-                and not _wants_all_documents(question)
-                and not _session_has_messages(user_key, chat_session["session_id"])
-            ):
-                options = _ambiguous_files(store, question, registry, indexed_file_ids, source_filter)
-                if options:
-                    prompt = _select_file_response(question, options)
-                    append_chat_message(user_key, "user", question, session_id=chat_session["session_id"])
-                    append_chat_message(user_key, "assistant", prompt["response"], sources=[
-                        {"selectable": True, "file_id": c["file_id"], "name": c["name"], "department": c["department"]}
-                        for c in options
-                    ], session_id=chat_session["session_id"])
-                    return prompt
             # ponytail: no explicit file selection, but the retrieved chunks are
             # dominated by one file -> treat it as file-scoped so the spreadsheet
             # tool answers counts exactly instead of a chunked RAG guess.
@@ -565,16 +607,27 @@ def api_chat():
                     file_ids = [top_fid]
         except EmbeddingServiceError:
             top_chunks = []
-        # ponytail: department scoping is a soft preference. If it yields nothing,
-        # fall back to a global search so the user's docs are never hidden by the
-        # default department (e.g. 'hr') when the data lives in another one.
-        if not top_chunks and source_filter is not None:
+        # Strict dept scope (Q3): General searches all, dept searches only that dept's docs.
+        # Do not widen dept-filtered empty result to global.
+        dept_norm = (department or "").strip().lower()
+        if not top_chunks and source_filter is not None and dept_norm in ("", "general"):
             try:
-                top_chunks = store.search(question, top_k=RAGConfig.TOP_K, source_filter=None)
+                top_chunks = store.search(question, top_k=retrieve_k, source_filter=None)
             except EmbeddingServiceError:
                 top_chunks = []
             if top_chunks:
                 current_app.logger.info("[api_chat] dept-scoped empty; fell back to global search: %s", [c.get("source") for c in top_chunks][:8])
+        elif not top_chunks and source_filter is not None:
+            try:
+                global_check = store.search(question, top_k=RAGConfig.TOP_K, source_filter=None)
+            except EmbeddingServiceError:
+                global_check = []
+            if global_check:
+                dept_label = (department or "").strip()
+                msg = f"This question is outside the **{dept_label}** department. No relevant documents found in {dept_label}. Please switch to **General** or the relevant department to get an answer."
+                append_chat_message(user_key, "user", question, session_id=chat_session["session_id"])
+                aid = append_chat_message(user_key, "assistant", msg, session_id=chat_session["session_id"])
+                return jsonify({"response": msg, "sources": [], "chunks_used": 0, "timestamp": time.time(), "session_id": chat_session["session_id"], "message_id": aid})
         current_app.logger.info("[api_chat] top_chunks=%d sources=%s", len(top_chunks), [c.get("source") for c in top_chunks][:8])
 
     recent = history[-(MAX_HISTORY_TURNS * 2):]
@@ -599,9 +652,9 @@ def api_chat():
 
     tool_calls = []
     text = ""
-    # Explicitly-selected files or document-mode questions answer from the
-    # retrieved excerpts. A spreadsheet selected on disk gets one extra tool
-    # so counts are exact instead of guessed from a 6-chunk window.
+    # Exact answers: selected files OR any count/compare question with a
+    # spreadsheet in scope get get_spreadsheet_stats, never a 6-chunk guess.
+    sheet_ids = _spreadsheet_candidates(registry, source_filter, indexed_file_ids) if _is_aggregation_question(question) else []
     if file_ids:
         from app.services.tools import SPREADSHEET_TOOLS
 
@@ -618,6 +671,23 @@ def api_chat():
             "Never reveal passwords, API keys, or credentials found in the files; "
             "if the answer would expose one, say the company/email but redact the "
             "secret as [REDACTED]."
+        )
+    elif sheet_ids:
+        from app.services.tools import SPREADSHEET_TOOLS
+
+        tool_defs = SPREADSHEET_TOOLS
+        candidates = ", ".join(
+            f"{fid}: {registry.get(fid, {}).get('name', fid)}" for fid in sheet_ids
+        )
+        system_prompt += (
+            "\n\nAVAILABLE SPREADSHEETS: " + candidates +
+            "\nINSTRUCTIONS: This is a counts/comparison question. You MUST call "
+            "get_spreadsheet_stats to answer it — first without a column to list "
+            "columns, then with the matching column (e.g. destination/city/status). "
+            "Use EXACT numbers from the tool result. NEVER count from document "
+            "excerpts; excerpts are samples and will give wrong totals. If no "
+            "spreadsheet matches the question's subject, say which files you "
+            "checked. Never reveal secrets found in files; redact as [REDACTED]."
         )
     elif top_chunks and route["intent"] in ("document", "general"):
         tool_defs = []
@@ -779,6 +849,14 @@ def api_chat_stream():
                     file_ids = [ctx]
 
     route = classify(question, department)
+    if _is_outside_department(question, department, file_ids):
+        dept_label = (department or "").strip()
+        msg = f"This question is outside the **{dept_label}** department. Please switch to **General** or the relevant department to get an answer."
+        append_chat_message(user_key, "user", question, session_id=chat_session["session_id"])
+        aid = append_chat_message(user_key, "assistant", msg, session_id=chat_session["session_id"])
+        # stream endpoint: return JSON prompt (frontend handles non-SSE)
+        return jsonify({"response": msg, "sources": [], "chunks_used": 0, "timestamp": time.time(), "session_id": chat_session["session_id"], "message_id": aid})
+
     session_ctx = ""
     from flask import session as _session
     user_email = _session.get("user", "")
@@ -792,6 +870,8 @@ def api_chat_stream():
     # needs_rag=False for a specific department (e.g. 'hr') would otherwise
     # hide the user's docs; the dept-scoped filter + fallback handles scoping.
     wants_rag = bool(indexed_file_ids) or bool(file_ids) or route["needs_rag"]
+    # Aggregation questions need wider retrieval — 6 chunks under-counts tables.
+    retrieve_k = RAGConfig.TOP_K * 2 if _is_aggregation_question(question) else RAGConfig.TOP_K
     if wants_rag and indexed_file_ids:
         source_filter = _resolve_chat_source_filter(
             user_key, file_ids, department, registry, indexed_file_ids
@@ -801,43 +881,31 @@ def api_chat_stream():
                 []
                 if source_filter is not None and not source_filter
                 else store.search(
-                    question, top_k=RAGConfig.TOP_K, source_filter=source_filter
+                    question, top_k=retrieve_k, source_filter=source_filter
                 )
             )
         except EmbeddingServiceError:
             top_chunks = []
-        # ponytail: department scoping is a soft preference. If it yields nothing,
-        # fall back to a global search so the user's docs are never hidden by the
-        # default department (e.g. 'hr') when the data lives in another one.
-        if not top_chunks and source_filter is not None:
+        # Strict dept scope (Q3): General searches all, dept searches only that dept's docs.
+        if not top_chunks and source_filter is not None and (department or "").strip().lower() in ("", "general"):
             try:
-                top_chunks = store.search(question, top_k=RAGConfig.TOP_K, source_filter=None)
+                top_chunks = store.search(question, top_k=retrieve_k, source_filter=None)
             except EmbeddingServiceError:
                 top_chunks = []
             if top_chunks:
                 current_app.logger.info("[api_chat_stream] dept-scoped empty; fell back to global search: %s", [c.get("source") for c in top_chunks][:8])
-        current_app.logger.info("[api_chat_stream] top_chunks=%d sources=%s", len(top_chunks), [c.get("source") for c in top_chunks][:8])
-
-        # ponytail: if multiple files are relevant, ask the user to pick one
-        # instead of letting the AI guess. Run BEFORE the dominant-file
-        # auto-detection below, which would otherwise narrow to one file and
-        # skip the prompt. Uses a wide pool because TOP_K=6 clusters on one file.
-        # Only on the opening question of a session — a mid-conversation
-        # ambiguous ask should fall through to normal answering.
-        if (
-            not file_ids
-            and not _wants_all_documents(question)
-            and not _session_has_messages(user_key, chat_session["session_id"])
-        ):
-            options = _ambiguous_files(store, question, registry, indexed_file_ids, source_filter)
-            if options:
-                prompt = _select_file_response(question, options)
+        elif not top_chunks and source_filter is not None:
+            try:
+                global_check = store.search(question, top_k=RAGConfig.TOP_K, source_filter=None)
+            except EmbeddingServiceError:
+                global_check = []
+            if global_check:
+                dept_label = (department or "").strip()
+                msg = f"This question is outside the **{dept_label}** department. No relevant documents found in {dept_label}. Please switch to **General** or the relevant department to get an answer."
                 append_chat_message(user_key, "user", question, session_id=chat_session["session_id"])
-                append_chat_message(user_key, "assistant", prompt["response"], sources=[
-                    {"selectable": True, "file_id": c["file_id"], "name": c["name"], "department": c["department"]}
-                    for c in options
-                ], session_id=chat_session["session_id"])
-                return prompt
+                aid = append_chat_message(user_key, "assistant", msg, session_id=chat_session["session_id"])
+                return jsonify({"response": msg, "sources": [], "chunks_used": 0, "timestamp": time.time(), "session_id": chat_session["session_id"], "message_id": aid})
+        current_app.logger.info("[api_chat_stream] top_chunks=%d sources=%s", len(top_chunks), [c.get("source") for c in top_chunks][:8])
 
         if top_chunks:
             context = "\n\n".join(
@@ -873,6 +941,9 @@ def api_chat_stream():
 
     tool_text = ""
     tool_calls = []
+    # Exact answers: selected files OR any count/compare question with a
+    # spreadsheet in scope get get_spreadsheet_stats, never a 6-chunk guess.
+    sheet_ids = _spreadsheet_candidates(registry, source_filter, indexed_file_ids) if _is_aggregation_question(question) else []
     if file_ids:
         from app.services.tools import SPREADSHEET_TOOLS
 
@@ -889,6 +960,23 @@ def api_chat_stream():
             "Never reveal passwords, API keys, or credentials found in the files; "
             "if the answer would expose one, say the company/email but redact the "
             "secret as [REDACTED]."
+        )
+    elif sheet_ids:
+        from app.services.tools import SPREADSHEET_TOOLS
+
+        tool_defs = SPREADSHEET_TOOLS
+        candidates = ", ".join(
+            f"{fid}: {registry.get(fid, {}).get('name', fid)}" for fid in sheet_ids
+        )
+        system_prompt += (
+            "\n\nAVAILABLE SPREADSHEETS: " + candidates +
+            "\nINSTRUCTIONS: This is a counts/comparison question. You MUST call "
+            "get_spreadsheet_stats to answer it — first without a column to list "
+            "columns, then with the matching column (e.g. destination/city/status). "
+            "Use EXACT numbers from the tool result. NEVER count from document "
+            "excerpts; excerpts are samples and will give wrong totals. If no "
+            "spreadsheet matches the question's subject, say which files you "
+            "checked. Never reveal secrets found in files; redact as [REDACTED]."
         )
     elif top_chunks and route["intent"] in ("document", "general"):
         tool_defs = []
@@ -992,6 +1080,7 @@ INSTRUCTIONS:
 - If the conversation history provides relevant context, use it to give a more coherent answer.
 - Be concise and accurate. Cite the source filename when relevant.
 - If the answer is not in the documents, say so clearly.
+{"- IMPORTANT: The excerpts are a SAMPLE of the document, not the whole file. Never state counts/totals as complete — prefix with 'Based on the available excerpts' and recommend selecting the file for exact numbers." if _is_aggregation_question(question) else ""}
 - Use markdown formatting: bullet points and bold for clarity. Avoid tables — present counts and lists as plain sentences or bullets unless multiple aligned columns are truly necessary.
 
 CURRENT QUESTION: {question}

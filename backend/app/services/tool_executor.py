@@ -1343,24 +1343,85 @@ def _get_executive_briefing(args: dict, user_email: str) -> dict:
     return {"overview": data}
 
 
+def _raw_spreadsheet_path(file_id: str) -> str:
+    """Raw copy saved on upload: backend/storage/raw/<fid[:2]>/<fid><ext>."""
+    base = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "storage", "raw",
+    )
+    for ext in (".xlsx", ".xls", ".csv"):
+        p = os.path.join(base, file_id[:2], f"{file_id}{ext}")
+        if os.path.exists(p):
+            return p
+    return ""
+
+
+def _rebuild_csv_from_index(doc) -> str:
+    """Legacy CSV uploads predate raw copies on disk; stitch the indexed chunks
+    back into storage/raw so stats stay exact. One-time self-heal."""
+    name_l = (doc.name or "").lower()
+    if not name_l.endswith(".csv"):
+        return ""
+    try:
+        from app.services.rag import get_store
+
+        text = get_store().get_file_text(doc.file_id)
+        if not text or len(text) < 20:
+            return ""
+        # demo docs start with a "[CSV Data]" marker line — drop it so pandas
+        # sees the real header row.
+        lines = text.splitlines()
+        if lines and lines[0].strip().startswith("["):
+            text = "\n".join(lines[1:])
+        base = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+            "storage", "raw",
+        )
+        raw_dir = os.path.join(base, doc.file_id[:2])
+        os.makedirs(raw_dir, exist_ok=True)
+        p = os.path.join(raw_dir, f"{doc.file_id}.csv")
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(text)
+        db = _db_session()
+        try:
+            db.query(Document).filter(Document.file_id == doc.file_id).update({"file_path": p})
+            db.commit()
+        finally:
+            db.close()
+        return p
+    except Exception:
+        return ""
+
+
 def _get_spreadsheet_stats(args: dict, user_email: str) -> dict:
     file_id = (args.get("file_id") or "").strip()
     column = (args.get("column") or "").strip()
     db = _db_session()
     try:
-        query = db.query(Document).filter(
-            Document.file_path != "",
-            Document.file_path.like("%.xlsx"),
-        )
+        query = db.query(Document).filter(Document.user_key == _user_key())
         if file_id:
-            doc = query.filter(Document.file_id == file_id).first()
+            docs = query.filter(Document.file_id == file_id).all()
         else:
-            # ponytail: model may omit file_id; fall back to the user's first
+            # ponytail: model may omit file_id; prefer the user's most recent
             # spreadsheet so the count still works.
-            doc = query.first()
-        if not doc or not os.path.exists(doc.file_path):
-            return {"error": "Spreadsheet file not found on disk. Re-upload the file."}
-        path = doc.file_path
+            docs = query.order_by(Document.uploaded_at.desc()).all()
+            sheets = [d for d in docs if (d.name or "").lower().endswith((".xlsx", ".xls", ".csv"))]
+            docs = sheets or docs
+        doc = None
+        path = ""
+        for d in docs:
+            if d.file_path and os.path.exists(d.file_path):
+                doc, path = d, d.file_path
+                break
+        if not doc and file_id:
+            # ponytail: raw copy exists even when file_path column is empty
+            path = _raw_spreadsheet_path(file_id)
+            doc = next((d for d in docs if d.file_id == file_id), None)
+        if not doc or not path or not os.path.exists(path):
+            if doc is not None:
+                path = _rebuild_csv_from_index(doc)
+            if not path or not os.path.exists(path):
+                return {"error": "Spreadsheet data file not available on disk. Re-upload the file to get exact numbers."}
     finally:
         db.close()
 
@@ -1377,7 +1438,20 @@ def _get_spreadsheet_stats(args: dict, user_email: str) -> dict:
                 key=lambda s: len(s.dropna(how="all")),
             )
         elif ext == ".csv":
-            df = pd.read_csv(path, on_bad_lines="skip")
+            try:
+                df = pd.read_csv(path, on_bad_lines="skip")
+            except Exception:
+                df = None
+            # ponytail: demo/indexed text may be whitespace-aligned, not comma CSV
+            if df is None or len(df.columns) == 1:
+                try:
+                    df2 = pd.read_csv(path, sep=r"\s+", on_bad_lines="skip", engine="python")
+                    if df2 is not None and len(df2.columns) > 1:
+                        df = df2
+                except Exception:
+                    pass
+            if df is None:
+                return {"error": "Could not parse CSV"}
         else:
             return {"error": "Not a spreadsheet file"}
     except Exception as e:
