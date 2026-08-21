@@ -310,16 +310,100 @@ def _spreadsheet_candidates(registry: dict, source_filter, indexed_file_ids: set
     ]
 
 
+def _aggregation_doc_context(
+    question: str,
+    file_ids: list,
+    registry: dict,
+    source_filter,
+    indexed_file_ids: set,
+    store,
+    context: str,
+    top_chunks: list | None = None,
+    drop_excerpts: bool = False,
+) -> str:
+    """Context for counts/comparison questions — accuracy over sampling.
+
+    - All scoped files are spreadsheets -> no excerpts; get_spreadsheet_stats
+      reads the raw file for exact numbers.
+    - Otherwise -> inject the FULL stitched text of the single best-matching
+      non-spreadsheet doc (a 6k-char PDF register beats 12 sampled chunks),
+      so the model counts every row.
+    - Fallback -> normal excerpt context.
+    """
+    normal = (
+        "RELEVANT DOCUMENTS (use these as your primary source of truth):\n"
+        f"{context}\n\n"
+    ) if context else ""
+    if drop_excerpts:
+        return ""
+    if not _is_aggregation_question(question):
+        return normal
+
+    scoped_sheets = set(_spreadsheet_candidates(registry, source_filter, indexed_file_ids))
+
+    if file_ids and all(f in scoped_sheets for f in file_ids):
+        return ""
+
+    if file_ids:
+        candidates = list(file_ids)
+    else:
+        # Retrieval may cluster on the wrong doc for count questions — scan the
+        # whole dept scope's non-spreadsheet docs and rank by keyword hits.
+        scope = source_filter if source_filter is not None else indexed_file_ids
+        seen = []
+        for c in top_chunks or []:
+            fid = c.get("file_id")
+            if fid and fid not in seen and fid not in scoped_sheets and fid in scope:
+                seen.append(fid)
+        for fid in scope:
+            if fid not in seen and fid not in scoped_sheets and fid in registry:
+                seen.append(fid)
+        candidates = seen
+
+    q_words = [w for w in re.findall(r"[a-z]{4,}", question.lower())]
+    best_fid, best_score, best_text = None, 0, ""
+    for fid in candidates[:8]:
+        entry = registry.get(fid, {})
+        if str(entry.get("name") or "").lower().endswith((".xlsx", ".xls", ".csv")):
+            continue
+        try:
+            full = store.get_file_text(fid)
+        except Exception:
+            continue
+        if not full or len(full) > 20000:
+            continue
+        low = full.lower()
+        score = sum(low.count(w) for w in q_words)
+        if score > best_score:
+            best_fid, best_score, best_text = fid, score, full
+    if not best_text:
+        return normal
+    name = registry.get(best_fid, {}).get("name", best_fid)
+    return (
+        f"COMPLETE DOCUMENT TEXT: {name} (the entire file — count every "
+        "occurrence, do not sample):\n" + best_text + "\n\n"
+    )
+
+
 def _is_outside_department(question: str, department: str, file_ids: list) -> bool:
     """True if question is clearly about another department while user is scoped to one.
-    Explicit file_ids (@mention / picker) always wins — not outside."""
+
+    Works for ANY department (existing or newly created):
+    - General-intent questions (no domain keywords) are never blocked — they may
+      live in a doc tagged to any dept (e.g. 'delivery volume' in Transport).
+    - Domain-mapped depts (finance/hr/academic/...) block questions whose true
+      domain differs from the dept's domain.
+    - Custom depts (Transport/IT/Sports/... or any new name) block questions that
+      clearly map to a specific OTHER known domain; everything else passes.
+    Explicit file_ids (@mention / picker) always win — not outside.
+    """
     if file_ids:
         return False
     dept_norm = (department or "").strip().lower()
     if not dept_norm or dept_norm == "general":
         return False
-    true_route = classify(question, "")
-    if true_route["domains"] == ["general"]:
+    true_domains = classify(question, "")["domains"]
+    if true_domains == ["general"]:
         return False
     dept_to_domain = {
         "finance": "finance",
@@ -332,10 +416,13 @@ def _is_outside_department(question: str, department: str, file_ids: list) -> bo
         "knowledge": "knowledge",
     }
     expected = dept_to_domain.get(dept_norm)
-    if not expected:
-        # Custom departments (Transport, IT, Sports, Library) have no keyword domain — don't block
-        return False
-    return expected not in true_route["domains"]
+    if expected:
+        return expected not in true_domains
+    # Custom/new department with no keyword mapping: block only when the
+    # question unambiguously belongs to specific other hard domains.
+    # knowledge/workflows are soft catch-alls ("how do I...") — never block on them.
+    hard = {"finance", "hr", "academic", "compliance", "admissions", "executive"}
+    return bool(true_domains) and all(d in hard for d in true_domains)
 
 
 def _fallback_response(top_chunks: list, registry: dict, label: str) -> dict:
@@ -547,7 +634,7 @@ def api_chat():
         # reference ("what's in this file?") is about that file by definition,
         # so it skips the similarity gate — a vague "this file" query embeds
         # nowhere near the cited file's chunks and would wrongly drift away.
-        elif len(question.strip()) <= 60 and not _wants_all_documents(question):
+        elif len(question.strip()) <= 60 and not _wants_all_documents(question) and not _is_aggregation_question(question):
             ctx = _recover_context_file(user_key, chat_session["session_id"])
             if ctx and ctx in indexed_file_ids:
                 deictic = bool(re.search(r"\b(this|that|the|above)\s+(file|document|spreadsheet|sheet)\b", question.lower()))
@@ -598,7 +685,7 @@ def api_chat():
             # ponytail: no explicit file selection, but the retrieved chunks are
             # dominated by one file -> treat it as file-scoped so the spreadsheet
             # tool answers counts exactly instead of a chunked RAG guess.
-            if top_chunks and not file_ids and not _wants_all_documents(question):
+            if top_chunks and not file_ids and not _wants_all_documents(question) and not _is_aggregation_question(question):
                 from collections import Counter
 
                 fid_counts = Counter(c.get("file_id") for c in top_chunks)
@@ -619,15 +706,22 @@ def api_chat():
                 current_app.logger.info("[api_chat] dept-scoped empty; fell back to global search: %s", [c.get("source") for c in top_chunks][:8])
         elif not top_chunks and source_filter is not None:
             try:
-                global_check = store.search(question, top_k=RAGConfig.TOP_K, source_filter=None)
+                global_chunks = store.search(question, top_k=retrieve_k, source_filter=None)
             except EmbeddingServiceError:
-                global_check = []
-            if global_check:
+                global_chunks = []
+            if global_chunks and _is_outside_department(question, department, []):
+                # Clearly another department's subject (e.g. compliance in Finance)
                 dept_label = (department or "").strip()
                 msg = f"This question is outside the **{dept_label}** department. No relevant documents found in {dept_label}. Please switch to **General** or the relevant department to get an answer."
                 append_chat_message(user_key, "user", question, session_id=chat_session["session_id"])
                 aid = append_chat_message(user_key, "assistant", msg, session_id=chat_session["session_id"])
                 return jsonify({"response": msg, "sources": [], "chunks_used": 0, "timestamp": time.time(), "session_id": chat_session["session_id"], "message_id": aid})
+            if global_chunks:
+                # General-intent question ("delivery volume") that merely lives in
+                # a doc tagged elsewhere — answer it, don't block.
+                top_chunks = global_chunks
+                source_filter = None  # retrieval scope widened; tool candidates too
+                current_app.logger.info("[api_chat] dept empty; general question answered from global: %s", [c.get("source") for c in top_chunks][:8])
         current_app.logger.info("[api_chat] top_chunks=%d sources=%s", len(top_chunks), [c.get("source") for c in top_chunks][:8])
 
     recent = history[-(MAX_HISTORY_TURNS * 2):]
@@ -672,6 +766,14 @@ def api_chat():
             "if the answer would expose one, say the company/email but redact the "
             "secret as [REDACTED]."
         )
+        if _is_aggregation_question(question):
+            system_prompt += (
+                "\nMANDATORY: This is a counts/comparison question. You MUST call "
+                "get_spreadsheet_stats (file_id from SELECTED FILES above; first "
+                "without column to list columns, then with the matching column) "
+                "BEFORE answering. NEVER count from document excerpts — they are "
+                "samples and will give wrong totals."
+            )
     elif sheet_ids:
         from app.services.tools import SPREADSHEET_TOOLS
 
@@ -701,12 +803,14 @@ def api_chat():
         tool_defs = tools_for_context(department, agent_scope)
 
     try:
-        doc_context = ""
-        if top_chunks:
-            doc_context = (
-                "RELEVANT DOCUMENTS (use these as your primary source of truth):\n"
-                f"{context}\n\n"
-            )
+        drop_excerpts = bool(
+            sheet_ids and top_chunks
+            and all(c.get("file_id") in set(sheet_ids) for c in top_chunks)
+        )
+        doc_context = _aggregation_doc_context(
+            question, file_ids, registry, source_filter, indexed_file_ids, store, context, top_chunks,
+            drop_excerpts=drop_excerpts,
+        )
 
         result = generate_answer_with_tools(
             system_prompt=system_prompt,
@@ -841,7 +945,7 @@ def api_chat_stream():
         # reference ("what's in this file?") is about that file by definition,
         # so it skips the similarity gate — a vague "this file" query embeds
         # nowhere near the cited file's chunks and would wrongly drift away.
-        elif len(question.strip()) <= 60 and not _wants_all_documents(question):
+        elif len(question.strip()) <= 60 and not _wants_all_documents(question) and not _is_aggregation_question(question):
             ctx = _recover_context_file(user_key, chat_session["session_id"])
             if ctx and ctx in indexed_file_ids:
                 deictic = bool(re.search(r"\b(this|that|the|above)\s+(file|document|spreadsheet|sheet)\b", question.lower()))
@@ -896,15 +1000,22 @@ def api_chat_stream():
                 current_app.logger.info("[api_chat_stream] dept-scoped empty; fell back to global search: %s", [c.get("source") for c in top_chunks][:8])
         elif not top_chunks and source_filter is not None:
             try:
-                global_check = store.search(question, top_k=RAGConfig.TOP_K, source_filter=None)
+                global_chunks = store.search(question, top_k=retrieve_k, source_filter=None)
             except EmbeddingServiceError:
-                global_check = []
-            if global_check:
+                global_chunks = []
+            if global_chunks and _is_outside_department(question, department, []):
+                # Clearly another department's subject (e.g. compliance in Finance)
                 dept_label = (department or "").strip()
                 msg = f"This question is outside the **{dept_label}** department. No relevant documents found in {dept_label}. Please switch to **General** or the relevant department to get an answer."
                 append_chat_message(user_key, "user", question, session_id=chat_session["session_id"])
                 aid = append_chat_message(user_key, "assistant", msg, session_id=chat_session["session_id"])
                 return jsonify({"response": msg, "sources": [], "chunks_used": 0, "timestamp": time.time(), "session_id": chat_session["session_id"], "message_id": aid})
+            if global_chunks:
+                # General-intent question ("delivery volume") that merely lives in
+                # a doc tagged elsewhere — answer it, don't block.
+                top_chunks = global_chunks
+                source_filter = None  # retrieval scope widened; tool candidates too
+                current_app.logger.info("[api_chat_stream] dept empty; general question answered from global: %s", [c.get("source") for c in top_chunks][:8])
         current_app.logger.info("[api_chat_stream] top_chunks=%d sources=%s", len(top_chunks), [c.get("source") for c in top_chunks][:8])
 
         if top_chunks:
@@ -912,7 +1023,7 @@ def api_chat_stream():
                 f"--- Source: {c['source']} (chunk {c['chunk_index']}) ---\n{c['text']}"
                 for c in top_chunks
             )
-            if not file_ids and not _wants_all_documents(question):
+            if not file_ids and not _wants_all_documents(question) and not _is_aggregation_question(question):
                 from collections import Counter
 
                 fid_counts = Counter(c.get("file_id") for c in top_chunks)
@@ -961,6 +1072,14 @@ def api_chat_stream():
             "if the answer would expose one, say the company/email but redact the "
             "secret as [REDACTED]."
         )
+        if _is_aggregation_question(question):
+            system_prompt += (
+                "\nMANDATORY: This is a counts/comparison question. You MUST call "
+                "get_spreadsheet_stats (file_id from SELECTED FILES above; first "
+                "without column to list columns, then with the matching column) "
+                "BEFORE answering. NEVER count from document excerpts — they are "
+                "samples and will give wrong totals."
+            )
     elif sheet_ids:
         from app.services.tools import SPREADSHEET_TOOLS
 
@@ -988,13 +1107,14 @@ def api_chat_stream():
         )
     else:
         tool_defs = tools_for_context(department, agent_scope)
-    if context:
-        doc_context = (
-            "RELEVANT DOCUMENTS (use these as your primary source of truth):\n"
-            f"{context}\n\n"
-        )
-    else:
-        doc_context = ""
+    drop_excerpts = bool(
+        sheet_ids and top_chunks
+        and all(c.get("file_id") in set(sheet_ids) for c in top_chunks)
+    )
+    doc_context = _aggregation_doc_context(
+        question, file_ids, registry, source_filter, indexed_file_ids, store, context, top_chunks,
+        drop_excerpts=drop_excerpts,
+    )
     try:
         result = generate_answer_with_tools(
             system_prompt=system_prompt,
