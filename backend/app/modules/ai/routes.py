@@ -188,6 +188,49 @@ def _resolve_file_selection(question: str, registry: dict, indexed_file_ids: set
         # Short bare-name reply that IS the file ("Shipments" or "Shipments.csv").
         if len(q) <= 30 and (q == name_l or clean(q) == clean(name)):
             return fid
+
+# "What is in X?" style questions — if the question explicitly references a
+    # file and no other match was found, scope to a single indexed file whose
+    # name has a high character-overlap (SequenceMatcher ratio > 0.8) with the
+    # reference term, indicating the user is likely referring to that file.
+    # We check each word in the filename (ignoring extension) for a high ratio.
+    m = re.match(r"^\s*what\s+is\s+in\s+(.+?)\??\s*$", q, re.IGNORECASE)
+    if m:
+        term = m.group(1).strip()
+        if len(term) >= 2:
+            import difflib
+            best_fid = None
+            best_ratio = 0
+            for fid, entry in registry.items():
+                if fid not in indexed_file_ids:
+                    continue
+                name = entry.get("name") or ""
+                # Check each word in the filename (ignore extension and spaces)
+                name_stripped = re.sub(r"\.(?:csv|xlsx?|pdf|txt)\$", "", name)
+                for word in re.split(r"[\s\.]+", name_stripped):
+                    ratio = difflib.SequenceMatcher(None, term.lower(), word.lower()).ratio()
+                    if ratio > best_ratio and ratio > 0.8:
+                        best_ratio = ratio
+                        best_fid = fid
+            if best_fid is not None:
+                return best_fid
+
+    # Question references a file by topic — if the user's question contains
+    # enough key words that match the filename, scope to that file so the
+    # RAG answer can come from its excerpts. This handles plain-English
+    # questions like "What's the fire safety evacuation procedure?" without
+    # requiring an @ mention or "what is in X?" pattern.
+    topics = re.findall(r"[a-z0-9]+", q)
+    if len(topics) >= 2:
+        for fid, entry in registry.items():
+            if fid not in indexed_file_ids:
+                continue
+            name = entry.get("name") or ""
+            name_words = set(re.findall(r"[a-z0-9]+", name.lower()))
+            overlap = len(set(topics) & name_words)
+            if overlap >= 2 and any(t in name.lower() for t in topics[:3]):
+                return fid
+
     return None
 
 
@@ -291,47 +334,21 @@ def _clean_tool_refs(text: str) -> str:
     return re.sub(r"【[^】]*】", "", text).strip()
 
 
-def _flatten_tables(text: str) -> str:
-    """Convert markdown tables to bullet lines so responses never render as tables."""
+def _sanitize(text: str) -> str:
+    """Clean tool refs and normalise <br> tags so Markdown renders correctly.
+    Tables are kept as tables — Markdown.jsx renders them with overflow handling.
+    """
     import re
-    lines = text.split("\n")
-    out = []
-    i = 0
-    while i < len(lines):
-        line = lines[i]
-        if "|" in line and line.lstrip().startswith("|"):
-            rows = []
-            while i < len(lines) and "|" in lines[i] and lines[i].lstrip().startswith("|"):
-                cell = lines[i].strip()
-                if cell.startswith("|"):
-                    cell = cell[1:]
-                if cell.endswith("|"):
-                    cell = cell[:-1]
-                cells = [c.strip() for c in cell.split("|")]
-                if not all(re.fullmatch(r"[-: ]+", c) for c in cells):
-                    rows.append(" · ".join(cells))
-                i += 1
-            out.extend(f"- {r}" for r in rows)
-        else:
-            out.append(line)
-            i += 1
-    return "\n".join(out).strip()
+    text = _clean_tool_refs(text)
+    # <br> inside table cells / lists → markdown hard break
+    text = re.sub(r"<br\s*/?>", "  \n", text, flags=re.I)
+    return text.strip()
 
 
 def _stream_line(line: str) -> str:
-    """Convert a single line: markdown table rows become bullets, separators dropped."""
+    """Pass through; tables are kept. Only normalise <br>."""
     import re
-    if line.lstrip().startswith("|"):
-        cell = line.strip()
-        if cell.startswith("|"):
-            cell = cell[1:]
-        if cell.endswith("|"):
-            cell = cell[:-1]
-        cells = [c.strip() for c in cell.split("|")]
-        if all(re.fullmatch(r"[-: ]+", c) for c in cells):
-            return ""
-        return f"- {' · '.join(cells)}"
-    return line
+    return re.sub(r"<br\s*/?>", "  \n", line, flags=re.I)
 
 
 def _summarize_tool_results(tool_calls: list) -> str:
@@ -683,7 +700,7 @@ def api_chat():
             text = "I'm not sure how to help with that. You can ask me about staff matters (leaves, attendance, policies), finance (fee invoices, expenses), or school admin (circulars, meetings, announcements)."
 
     response_payload = {
-        "response": _flatten_tables(_clean_tool_refs(text)),
+        "response": _sanitize(text),
         "sources": _build_source_payload(top_chunks, registry) if top_chunks else [],
         "chunks_used": len(top_chunks) if top_chunks else 0,
         "timestamp": time.time(),
@@ -930,7 +947,7 @@ def api_chat_stream():
 
     def generate():
         if tool_text:
-            cleaned = _flatten_tables(_clean_tool_refs(tool_text))
+            cleaned = _sanitize(tool_text)
             yield f"event: token\ndata: {json.dumps(cleaned)}\n\n"
             answer = cleaned
             append_chat_message(user_key, "user", question, session_id=sid)
@@ -1006,7 +1023,7 @@ ANSWER:"""
                 return
 
             answer = "".join(full_response)
-            answer = _flatten_tables(_clean_tool_refs(answer)) if answer else answer
+            answer = _sanitize(answer) if answer else answer
             append_chat_message(user_key, "user", question, session_id=sid)
             assistant_msg_id = append_chat_message(user_key, "assistant", answer, sources=source_payload, session_id=sid)
 
