@@ -114,6 +114,7 @@ def api_upload():
                 if doc:
                     doc.file_path = raw_path
                     db.commit()
+                    entry["file_path"] = raw_path
             finally:
                 db.close()
         total_ms = int((time.monotonic() - started) * 1000)
@@ -345,10 +346,16 @@ def api_file_open(file_id):
 
     if source == "local":
         raw_path = entry.get("file_path") or ""
-        real = os.path.realpath(raw_path)
+        real = os.path.realpath(raw_path) if raw_path else ""
         # Guard: only serve files inside our own storage dir.
-        if raw_path and real.startswith(os.path.realpath(STORAGE_RAW) + os.sep):
+        if raw_path and real.startswith(os.path.realpath(STORAGE_RAW) + os.sep) and os.path.exists(real):
             return send_file(real, as_attachment=False)
+        # file_path empty in registry (e.g. cached pre-fix) — try expected
+        # on-disk location directly so new uploads open even if DB lagged.
+        ext = os.path.splitext(entry.get("name") or "")[1].lower()
+        expected = os.path.join(STORAGE_RAW, file_id[:2], f"{file_id}{ext}")
+        if os.path.exists(expected) and os.path.realpath(expected).startswith(os.path.realpath(STORAGE_RAW) + os.sep):
+            return send_file(os.path.realpath(expected), as_attachment=False)
         # Legacy upload (original not kept on disk) — serve the text
         # reconstructed from indexed chunks so the link still works.
         text = get_store().get_file_text(file_id)

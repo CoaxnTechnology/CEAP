@@ -298,6 +298,8 @@ def save_document(user_key: str, file_id: str, entry: dict):
             existing.department = entry.get("department") or existing.department
             existing.tags = entry.get("tags") or existing.tags
             existing.student_id = entry.get("student_id", "") or existing.student_id
+            if entry.get("file_path"):
+                existing.file_path = entry["file_path"]
         else:
             doc = Document(
                 file_id=file_id,
@@ -311,6 +313,7 @@ def save_document(user_key: str, file_id: str, entry: dict):
                 source_ref=entry.get("source_ref", ""),
                 category_id=entry.get("category_id"),
                 department=entry.get("department"),
+                file_path=entry.get("file_path", ""),
                 tags=entry.get("tags", []),
                 student_id=entry.get("student_id", ""),
             )

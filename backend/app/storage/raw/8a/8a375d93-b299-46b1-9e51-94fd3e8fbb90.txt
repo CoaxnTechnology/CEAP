@@ -1,0 +1,2 @@
+Hello local test file content for open check
+Line 2
