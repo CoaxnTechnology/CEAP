@@ -289,13 +289,15 @@ def _wants_all_documents(question: str) -> bool:
 
 
 def _is_aggregation_question(question: str) -> bool:
-    """True for count/compare questions where excerpt sampling hallucinates
-    ('how many', 'which city has the highest...'). These must be answered with
-    exact spreadsheet stats, not a 6-chunk RAG window."""
+    """True for count/compare/enumeration questions where excerpt sampling
+    hallucinates ('how many', 'which city has the highest', 'net pay in each').
+    These must be answered with exact stats or full-doc text, not a 6-chunk
+    RAG window."""
     return bool(re.search(
         r"\b(how many|how much|count|number of|total|average|sum of|"
         r"which\s+\w+\s+(has|have)\s+the\s+(highest|lowest|most|least|largest|smallest)|"
-        r"(highest|lowest|most|least)\s+\w+\b)",
+        r"(highest|lowest|most|least)\s+\w+|"
+        r"in each of|each of the|every|all of the|list (all|every))\b",
         question.lower(),
     ))
 
@@ -325,9 +327,9 @@ def _aggregation_doc_context(
 
     - All scoped files are spreadsheets -> no excerpts; get_spreadsheet_stats
       reads the raw file for exact numbers.
-    - Otherwise -> inject the FULL stitched text of the single best-matching
-      non-spreadsheet doc (a 6k-char PDF register beats 12 sampled chunks),
-      so the model counts every row.
+    - Otherwise -> inject FULL stitched text of the best keyword-matching
+      non-spreadsheet docs (a 6k-char PDF register beats 12 sampled chunks),
+      budget-capped so multi-select covers every picked file.
     - Fallback -> normal excerpt context.
     """
     normal = (
@@ -361,7 +363,7 @@ def _aggregation_doc_context(
         candidates = seen
 
     q_words = [w for w in re.findall(r"[a-z]{4,}", question.lower())]
-    best_fid, best_score, best_text = None, 0, ""
+    scored = []
     for fid in candidates[:8]:
         entry = registry.get(fid, {})
         if str(entry.get("name") or "").lower().endswith((".xlsx", ".xls", ".csv")):
@@ -374,15 +376,24 @@ def _aggregation_doc_context(
             continue
         low = full.lower()
         score = sum(low.count(w) for w in q_words)
-        if score > best_score:
-            best_fid, best_score, best_text = fid, score, full
-    if not best_text:
+        scored.append((score, fid, full))
+    scored.sort(key=lambda t: t[0], reverse=True)
+    # ponytail: total char budget keeps multi-doc prompts under free-tier Groq
+    # TPM; raise alongside the per-doc 20000 cap on paid tier. A doc that
+    # doesn't fit is skipped so a smaller next one still can.
+    budget, used, parts = 32000, 0, []
+    for _score, fid, full in scored:
+        if used + len(full) > budget:
+            continue
+        name = registry.get(fid, {}).get("name", fid)
+        parts.append(
+            f"COMPLETE DOCUMENT TEXT: {name} (the entire file — count every "
+            "occurrence, do not sample):\n" + full
+        )
+        used += len(full)
+    if not parts:
         return normal
-    name = registry.get(best_fid, {}).get("name", best_fid)
-    return (
-        f"COMPLETE DOCUMENT TEXT: {name} (the entire file — count every "
-        "occurrence, do not sample):\n" + best_text + "\n\n"
-    )
+    return "\n\n".join(parts) + "\n\n"
 
 
 def _is_outside_department(question: str, department: str, file_ids: list) -> bool:
@@ -759,8 +770,15 @@ def api_chat():
         system_prompt += (
             "\n\nSELECTED FILES: " + selected +
             "\nINSTRUCTIONS: The user selected files. If they ask for counts, "
-            "averages, or comparisons, call get_spreadsheet_stats with the matching "
-            "file_id and the right column to get EXACT numbers. Never invent counts. "
+            "averages, or comparisons, call get_spreadsheet_stats with the "
+            "matching file_id and the right column to get EXACT numbers — for "
+            "totals or comparisons spanning multiple selected files, make one "
+            "call PER file_id. Never invent counts. "
+            "If the question asks about a document type that none of the "
+            "selected files contain (e.g. payslips when only an invoice "
+            "register is selected), state which files ARE selected and ask "
+            "the user to select the right ones — never present unrelated "
+            "file content as the answer. "
             "Answer other questions from the document excerpts above. "
             "Never reveal passwords, API keys, or credentials found in the files; "
             "if the answer would expose one, say the company/email but redact the "
@@ -769,10 +787,11 @@ def api_chat():
         if _is_aggregation_question(question):
             system_prompt += (
                 "\nMANDATORY: This is a counts/comparison question. You MUST call "
-                "get_spreadsheet_stats (file_id from SELECTED FILES above; first "
-                "without column to list columns, then with the matching column) "
-                "BEFORE answering. NEVER count from document excerpts — they are "
-                "samples and will give wrong totals."
+                "get_spreadsheet_stats BEFORE answering — once per relevant "
+                "selected file (file_id from SELECTED FILES above; first without "
+                "column to list columns, then with the matching column). NEVER "
+                "count from document excerpts — they are samples and will give "
+                "wrong totals."
             )
     elif sheet_ids:
         from app.services.tools import SPREADSHEET_TOOLS
@@ -1065,8 +1084,15 @@ def api_chat_stream():
         system_prompt += (
             "\n\nSELECTED FILES: " + selected +
             "\nINSTRUCTIONS: The user selected files. If they ask for counts, "
-            "averages, or comparisons, call get_spreadsheet_stats with the matching "
-            "file_id and the right column to get EXACT numbers. Never invent counts. "
+            "averages, or comparisons, call get_spreadsheet_stats with the "
+            "matching file_id and the right column to get EXACT numbers — for "
+            "totals or comparisons spanning multiple selected files, make one "
+            "call PER file_id. Never invent counts. "
+            "If the question asks about a document type that none of the "
+            "selected files contain (e.g. payslips when only an invoice "
+            "register is selected), state which files ARE selected and ask "
+            "the user to select the right ones — never present unrelated "
+            "file content as the answer. "
             "Answer other questions from the document excerpts above. "
             "Never reveal passwords, API keys, or credentials found in the files; "
             "if the answer would expose one, say the company/email but redact the "
@@ -1075,10 +1101,11 @@ def api_chat_stream():
         if _is_aggregation_question(question):
             system_prompt += (
                 "\nMANDATORY: This is a counts/comparison question. You MUST call "
-                "get_spreadsheet_stats (file_id from SELECTED FILES above; first "
-                "without column to list columns, then with the matching column) "
-                "BEFORE answering. NEVER count from document excerpts — they are "
-                "samples and will give wrong totals."
+                "get_spreadsheet_stats BEFORE answering — once per relevant "
+                "selected file (file_id from SELECTED FILES above; first without "
+                "column to list columns, then with the matching column). NEVER "
+                "count from document excerpts — they are samples and will give "
+                "wrong totals."
             )
     elif sheet_ids:
         from app.services.tools import SPREADSHEET_TOOLS
