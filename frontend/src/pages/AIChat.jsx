@@ -13,6 +13,7 @@ import {
   ChevronRight,
   Trash2,
   Square,
+  ExternalLink,
 } from 'lucide-react'
 import Card from '../components/ui/Card'
 import Button from '../components/ui/Button'
@@ -116,7 +117,7 @@ export default function AIChat() {
         setIndexedDocs(
           Object.entries(files)
             .filter(([, f]) => f.indexed)
-            .map(([file_id, f]) => ({ file_id, name: f.name || file_id, department: (f.department || '').toLowerCase() }))
+            .map(([file_id, f]) => ({ file_id, name: f.name || file_id, department: (f.department || '').toLowerCase(), source: f.source || '' }))
         )
       })
       .catch(() => {})
@@ -719,18 +720,29 @@ id: uuidCounter++,
               )}
               {deptDocs.map((f) => {
                 const selected = selectedFileIds.includes(f.file_id)
+                const cloud = f.source === 'onedrive' || f.source === 'gdrive'
                 return (
-                  <li key={f.file_id}>
+                  <li key={f.file_id} className="flex items-stretch gap-1">
                     <button
                       type="button"
                       onClick={() => setSelectedFileIds((prev) => (prev.includes(f.file_id) ? prev.filter((id) => id !== f.file_id) : [...prev, f.file_id]))}
-                      className={`flex w-full items-center gap-2 truncate rounded-lg border px-3 py-2 text-left text-xs font-medium transition ${
+                      className={`flex min-w-0 flex-1 items-center gap-2 truncate rounded-lg border px-3 py-2 text-left text-xs font-medium transition ${
                         selected ? 'border-navy-300 bg-navy-50 text-navy-900' : 'border-slate-100 bg-slate-50/80 text-slate-800 hover:border-navy-200 hover:bg-navy-50'
                       }`}
                     >
                       <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] ${selected ? 'border-navy-600 bg-navy-600 text-white' : 'border-slate-300 bg-white text-transparent'}`}>✓</span>
                       <span className="truncate">{f.name}</span>
                     </button>
+                    {cloud && (
+                      <button
+                        type="button"
+                        title={f.source === 'gdrive' ? 'Open in Google Drive' : 'Open in OneDrive'}
+                        onClick={() => window.open(`/api/files/${f.file_id}/open`, '_blank')}
+                        className="flex shrink-0 items-center rounded-lg border border-slate-100 bg-slate-50/80 px-2 text-slate-400 transition hover:border-navy-200 hover:bg-navy-50 hover:text-navy-600"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                   </li>
                 )
               })}

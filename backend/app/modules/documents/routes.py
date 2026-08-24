@@ -6,7 +6,7 @@ import shutil
 import time
 import tempfile
 from sqlalchemy import func
-from flask import Blueprint, request, jsonify, current_app, make_response, send_file
+from flask import Blueprint, request, jsonify, current_app, make_response, redirect, send_file
 from app.auth_helpers import login_required
 from app.db import SessionLocal
 from app.models import User
@@ -296,6 +296,37 @@ def api_files():
     resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
     resp.headers["Pragma"] = "no-cache"
     return resp
+
+
+@files_bp.route("/api/files/<file_id>/open", methods=["GET"])
+@login_required
+def api_file_open(file_id):
+    """Redirect to the file in its cloud source (OneDrive webUrl / Drive view URL)."""
+    entry = get_registry().get(file_id)
+    if not entry:
+        return jsonify({"error": "File not found"}), 404
+
+    source = (entry.get("source") or "").lower()
+    source_ref = entry.get("source_ref") or ""
+
+    if source == "gdrive" and source_ref:
+        return redirect(f"https://drive.google.com/file/d/{source_ref}/view", 302)
+
+    if source == "onedrive" and source_ref:
+        from flask import session
+
+        from app.modules.cloud.routes import _sync_od_from_db
+        from app.services.onedrive import get_fresh_token, graph_request
+
+        _sync_od_from_db()
+        token, _ = get_fresh_token(session.get("od_cache"), session.get("od_token"))
+        meta = graph_request(f"/me/drive/items/{source_ref}", token) if token else None
+        web_url = (meta or {}).get("webUrl")
+        if not web_url:
+            return jsonify({"error": "reconnect", "provider": "onedrive"}), 401
+        return redirect(web_url, 302)
+
+    return jsonify({"error": "not_a_cloud_file", "source": source}), 404
 
 
 @files_bp.route("/api/categories", methods=["GET"])
