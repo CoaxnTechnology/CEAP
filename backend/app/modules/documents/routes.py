@@ -1,6 +1,7 @@
 """app/routes/files.py"""
 
 import hashlib
+import io
 import os
 import shutil
 import time
@@ -99,10 +100,10 @@ def api_upload():
             file.filename, text, os.path.getsize(tmp_path), "local",
             category_id=category_id, department=department,
         )
-        # ponytail: persist raw file so spreadsheet-count tools can read exact
-        # values instead of guessing from a 6-chunk RAG window.
+        # ponytail: persist raw file so spreadsheet-count tools read exact
+        # values, and "open in browser tab" works for every local upload.
         file_id = entry.get("file_id")
-        if file_id and ext in (".xlsx", ".xls", ".csv"):
+        if file_id:
             raw_dir = os.path.join(STORAGE_RAW, file_id[:2])
             os.makedirs(raw_dir, exist_ok=True)
             raw_path = os.path.join(raw_dir, f"{file_id}{ext}")
@@ -341,6 +342,25 @@ def api_file_open(file_id):
         if not web_url:
             return jsonify({"error": "reconnect", "provider": "onedrive"}), 401
         return redirect(web_url, 302)
+
+    if source == "local":
+        raw_path = entry.get("file_path") or ""
+        real = os.path.realpath(raw_path)
+        # Guard: only serve files inside our own storage dir.
+        if raw_path and real.startswith(os.path.realpath(STORAGE_RAW) + os.sep):
+            return send_file(real, as_attachment=False)
+        # Legacy upload (original not kept on disk) — serve the text
+        # reconstructed from indexed chunks so the link still works.
+        text = get_store().get_file_text(file_id)
+        if not text:
+            return jsonify({"error": "original_file_not_retained"}), 404
+        base = os.path.splitext(entry.get("name") or "file")[0]
+        return send_file(
+            io.BytesIO(text.encode("utf-8")),
+            mimetype="text/plain",
+            as_attachment=False,
+            download_name=f"{base}.txt",
+        )
 
     return jsonify({"error": "not_a_cloud_file", "source": source}), 404
 

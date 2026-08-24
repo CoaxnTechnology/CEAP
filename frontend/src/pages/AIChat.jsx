@@ -730,7 +730,7 @@ id: uuidCounter++,
               )}
               {deptDocs.filter((f) => f.name.toLowerCase().includes(fileSearch.toLowerCase())).map((f) => {
                 const selected = selectedFileIds.includes(f.file_id)
-                const cloud = f.source === 'onedrive' || f.source === 'gdrive'
+                const openTitle = f.source === 'gdrive' ? 'Open in Google Drive' : f.source === 'onedrive' ? 'Open in OneDrive' : 'Open in new tab'
                 return (
                   <li key={f.file_id} className="flex items-stretch gap-1">
                     <button
@@ -743,10 +743,10 @@ id: uuidCounter++,
                       <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[10px] ${selected ? 'border-navy-600 bg-navy-600 text-white' : 'border-slate-300 bg-white text-transparent'}`}>✓</span>
                       <span className="truncate">{f.name}</span>
                     </button>
-                    {cloud && (
+                    {f.source !== 'repository' && (
                       <button
                         type="button"
-                        title={f.source === 'gdrive' ? 'Open in Google Drive' : 'Open in OneDrive'}
+                        title={openTitle}
                         onClick={() => window.open(`/api/files/${f.file_id}/open`, '_blank')}
                         className="flex shrink-0 items-center rounded-lg border border-slate-100 bg-slate-50/80 px-2 text-slate-400 transition hover:border-navy-200 hover:bg-navy-50 hover:text-navy-600"
                       >
