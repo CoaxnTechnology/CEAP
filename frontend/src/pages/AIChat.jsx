@@ -59,6 +59,7 @@ export default function AIChat() {
   const [indexedDocs, setIndexedDocs] = useState([])
   const [mentionIdx, setMentionIdx] = useState(0)
   const [selectedFileIds, setSelectedFileIds] = useState([])
+  const [fileSearch, setFileSearch] = useState('')
   const inputRef = useRef(null)
   const mentionListRef = useRef(null)
 
@@ -714,11 +715,20 @@ id: uuidCounter++,
               {selectedFileIds.length > 0 ? ` · ${selectedFileIds.length} selected` : ''}
             </p>
             <p className="mt-1 text-[10px] text-slate-400">Select a file to ask about it. If none selected, asks from all {activeDept === 'general' ? 'files' : `${chatDepartments.find((d) => d.id === activeDept)?.label || activeDept} files`}.</p>
+            {deptDocs.length > 5 && (
+              <input
+                type="search"
+                value={fileSearch}
+                onChange={(e) => setFileSearch(e.target.value)}
+                placeholder="Search files…"
+                className="mt-2 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs outline-none placeholder:text-slate-400 focus:border-navy-300 focus:bg-white"
+              />
+            )}
             <ul className="mt-3 space-y-1.5">
               {deptDocs.length === 0 && (
                 <li className="text-xs text-slate-400">No files in this department</li>
               )}
-              {deptDocs.map((f) => {
+              {deptDocs.filter((f) => f.name.toLowerCase().includes(fileSearch.toLowerCase())).map((f) => {
                 const selected = selectedFileIds.includes(f.file_id)
                 const cloud = f.source === 'onedrive' || f.source === 'gdrive'
                 return (
@@ -746,6 +756,9 @@ id: uuidCounter++,
                   </li>
                 )
               })}
+              {deptDocs.length > 0 && !deptDocs.some((f) => f.name.toLowerCase().includes(fileSearch.toLowerCase())) && (
+                <li className="text-xs text-slate-400">No files match “{fileSearch}”</li>
+              )}
             </ul>
           </Card>
 

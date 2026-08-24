@@ -318,10 +318,26 @@ def api_file_open(file_id):
         from app.modules.cloud.routes import _sync_od_from_db
         from app.services.onedrive import get_fresh_token, graph_request
 
-        _sync_od_from_db()
-        token, _ = get_fresh_token(session.get("od_cache"), session.get("od_token"))
-        meta = graph_request(f"/me/drive/items/{source_ref}", token) if token else None
-        web_url = (meta or {}).get("webUrl")
+        def _refresh_session_tokens():
+            """Silent-refresh MSAL tokens and KEEP them — dropping the updated
+            cache made every second open fall back to an expired token."""
+            _sync_od_from_db()
+            token, new_cache = get_fresh_token(session.get("od_cache"), session.get("od_token"))
+            session["od_token"] = token or ""
+            if new_cache:
+                session["od_cache"] = new_cache
+            return token
+
+        def _fetch_web_url(token):
+            meta = graph_request(f"/me/drive/items/{source_ref}", token) if token else None
+            return (meta or {}).get("webUrl")
+
+        web_url = _fetch_web_url(_refresh_session_tokens())
+        if not web_url:
+            # Session tokens stale vs DB (or refresh failed) — force re-restore once.
+            session.pop("od_token", None)
+            session.pop("od_cache", None)
+            web_url = _fetch_web_url(_refresh_session_tokens())
         if not web_url:
             return jsonify({"error": "reconnect", "provider": "onedrive"}), 401
         return redirect(web_url, 302)
