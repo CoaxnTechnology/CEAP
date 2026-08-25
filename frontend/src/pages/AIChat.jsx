@@ -25,6 +25,21 @@ let activeStreamSessionId = null
 let streamPollTimer = null
 let aiChatMounted = false
 
+// ponytail: tiny typo-tolerant similarity for bare filenames (e.g. paysip_09.pdf -> payslip_09.pdf)
+function _lev(a, b) {
+  const m = a.length, n = b.length
+  const dp = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0))
+  for (let i = 0; i <= m; i++) dp[i][0] = i
+  for (let j = 0; j <= n; j++) dp[0][j] = j
+  for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1] : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1])
+  return dp[m][n]
+}
+function _similarity(a, b) {
+  if (!a || !b) return 0
+  const d = _lev(a, b)
+  return (a.length + b.length - d) / (a.length + b.length)
+}
+
 const suggestedFollowUps = [
   'What is the process for applying for maternity leave?',
   'Who approves leave for Heads of Department?',
@@ -327,6 +342,31 @@ export default function AIChat() {
           content = content.replace(re, ' ')
         }
       })
+      // ponytail: bare filename mentioned without @ or picker — also resolve
+      // so "What does Bereavement-...docx say?" works without ticking the box
+      const lower = content.toLowerCase()
+      indexedDocs.forEach((doc) => {
+        if (!mentionIds.includes(doc.file_id) && lower.includes(doc.name.toLowerCase())) {
+          mentionIds.push(doc.file_id)
+        }
+      })
+      // ponytail: typo-tolerant fallback — paysip_09.pdf -> payslip_09.pdf for any file
+      if (mentionIds.length === baseIds.length) {
+        const tokens = lower.match(/[\w\-]+\.[\w]{2,5}/g) || []
+        tokens.forEach((tok) => {
+          let best = null, bestScore = 0
+          indexedDocs.forEach((doc) => {
+            if (mentionIds.includes(doc.file_id)) return
+            const name = doc.name.toLowerCase()
+            const nameNoExt = name.replace(/\.[a-z0-9]{2,5}$/, '')
+            const s1 = _similarity(tok, name)
+            const s2 = _similarity(tok, nameNoExt)
+            const s = Math.max(s1, s2)
+            if (s > bestScore) { bestScore = s; best = doc }
+          })
+          if (best && bestScore >= 0.85 && tok.length >= 4) mentionIds.push(best.file_id)
+        })
+      }
       content = content.replace(/\s+/g, ' ').trim()
     }
     if (!content) return
@@ -714,7 +754,7 @@ id: uuidCounter++,
               {activeDept === 'general' ? 'All indexed files' : `${chatDepartments.find((d) => d.id === activeDept)?.label || activeDept} files`}
               {selectedFileIds.length > 0 ? ` · ${selectedFileIds.length} selected` : ''}
             </p>
-            <p className="mt-1 text-[10px] text-slate-400">Select a file to ask about it. If none selected, asks from all {activeDept === 'general' ? 'files' : `${chatDepartments.find((d) => d.id === activeDept)?.label || activeDept} files`}.</p>
+            <p className="mt-1 text-[10px] text-slate-400">Tip: type <span className="font-mono">@</span> to mention a file, or just write its name (e.g. “Bereavement-leave-company-policy.docx”) — no need to tick the box. If none selected, asks from all {activeDept === 'general' ? 'files' : `${chatDepartments.find((d) => d.id === activeDept)?.label || activeDept} files`}.</p>
             {deptDocs.length > 5 && (
               <input
                 type="search"

@@ -14,13 +14,58 @@ class GeminiServiceError(Exception):
     pass
 
 
-_client = (
-    groq.Groq(
-        api_key=GroqConfig.API_KEY,
-        timeout=25.0,
-        max_retries=0,
-    ) if GroqConfig.API_KEY else None
-)
+def _get_api_key() -> str:
+    """Current Groq key — DB (AppSetting) wins over env, so UI changes take effect without restart."""
+    try:
+        from app.db import SessionLocal
+        from app.models import AppSetting
+
+        db = SessionLocal()
+        try:
+            row = db.query(AppSetting).filter(AppSetting.key == "groq_api_key").first()
+            if row and (row.value or "").strip():
+                return row.value.strip()
+        finally:
+            db.close()
+    except Exception:
+        pass
+    import os
+
+    return (GroqConfig.API_KEY or os.getenv("GROQ_API_KEY") or "").strip()
+
+
+def _get_model() -> str:
+    try:
+        from app.db import SessionLocal
+        from app.models import AppSetting
+
+        db = SessionLocal()
+        try:
+            row = db.query(AppSetting).filter(AppSetting.key == "groq_model").first()
+            if row and (row.value or "").strip():
+                return row.value.strip()
+        finally:
+            db.close()
+    except Exception:
+        pass
+    import os
+
+    return (GroqConfig.MODEL or os.getenv("GROQ_MODEL") or "llama-3.3-70b-versatile").strip()
+
+
+_client = None
+_client_key = None
+
+
+def _get_client():
+    global _client, _client_key
+    key = _get_api_key()
+    if not key:
+        return None
+    if _client is None or _client_key != key:
+        _client = groq.Groq(api_key=key, timeout=25.0, max_retries=0)
+        _client_key = key
+    return _client
 
 _RETRYABLE_STATUS_CODES = {503, 500, 429}
 _MAX_RETRIES = 3
@@ -62,11 +107,12 @@ def generate_answer(prompt: str) -> str:
 
     Returns the cleaned text, or empty string if no API key or on error.
     """
-    if not _client:
+    client = _get_client()
+    if not client:
         return ""
     try:
-        response = _client.chat.completions.create(
-            model=GroqConfig.MODEL,
+        response = client.chat.completions.create(
+            model=_get_model(),
             messages=[{"role": "user", "content": prompt}],
         )
         text = _strip_code_fence(response.choices[0].message.content or "")
@@ -80,11 +126,12 @@ def generate_answer_stream(prompt: str):
 
     Yields content deltas. Returns None if no API key.
     """
-    if not _client:
+    client = _get_client()
+    if not client:
         return
     try:
-        stream = _client.chat.completions.create(
-            model=GroqConfig.MODEL,
+        stream = client.chat.completions.create(
+            model=_get_model(),
             messages=[{"role": "user", "content": prompt}],
             stream=True,
         )
@@ -102,7 +149,8 @@ def generate_followup_suggestions(question: str, answer: str) -> list[str]:
 
     Returns a JSON array of strings, or an empty list if no API key.
     """
-    if not _client or not answer:
+    client = _get_client()
+    if not client or not answer:
         return []
     prompt = (
         "Based on the following Q&A, suggest 3 short follow-up questions "
@@ -111,8 +159,8 @@ def generate_followup_suggestions(question: str, answer: str) -> list[str]:
         'Example: ["What are the key metrics?", "How does this compare to last quarter?", "What are the next steps?"]\n'
     )
     try:
-        response = _client.chat.completions.create(
-            model=GroqConfig.MODEL,
+        response = client.chat.completions.create(
+            model=_get_model(),
             messages=[{"role": "user", "content": prompt}],
         )
         text = _strip_code_fence(response.choices[0].message.content or "")
@@ -135,7 +183,8 @@ def generate_answer_with_tools(
     Returns a dict with keys 'text' (string) and 'tool_calls' (list)
     and optionally 'error'.
     """
-    if not _client:
+    client = _get_client()
+    if not client:
         return {"text": "", "tool_calls": [], "error": "No Groq key set"}
 
     messages = []
@@ -155,8 +204,8 @@ def generate_answer_with_tools(
 
     for attempt in range(4):
         try:
-            response = _client.chat.completions.create(
-                model=GroqConfig.MODEL,
+            response = client.chat.completions.create(
+                model=_get_model(),
                 messages=messages,
                 tools=tools,
             )
@@ -166,8 +215,8 @@ def generate_answer_with_tools(
             # retry once WITHOUT tools so the user still gets a clean text answer.
             if getattr(exc, "status_code", None) == 400 and tools:
                 try:
-                    plain = _client.chat.completions.create(
-                        model=GroqConfig.MODEL,
+                    plain = client.chat.completions.create(
+                        model=_get_model(),
                         messages=messages,
                     )
                     return {
@@ -292,8 +341,9 @@ def _build_tools(tool_defs: list) -> list:
 
 
 def _redact_key(text: str) -> str:
-    if GroqConfig.API_KEY:
-        return text.replace(GroqConfig.API_KEY, "[REDACTED]")
+    key = _get_api_key()
+    if key:
+        return text.replace(key, "[REDACTED]")
     return text
 
 
@@ -312,7 +362,8 @@ def generate_recommendations(
 
     Returns `fallback` when no API key is set or the LLM call fails.
     """
-    if not _client:
+    client = _get_client()
+    if not client:
         return fallback or []
 
     prompt = (
@@ -335,8 +386,8 @@ def generate_recommendations(
 
     for attempt in range(_MAX_RETRIES):
         try:
-            response = _client.chat.completions.create(
-                model=GroqConfig.MODEL,
+            response = client.chat.completions.create(
+                model=_get_model(),
                 messages=[{"role": "user", "content": prompt}],
             )
             text = _strip_code_fence(response.choices[0].message.content or "")
@@ -362,7 +413,8 @@ def generate_briefing(context: str, fallback: dict) -> dict:
 
     Returns `fallback` when no API key is set or the LLM call fails.
     """
-    if not _client:
+    client = _get_client()
+    if not client:
         return fallback
 
     prompt = (
@@ -385,8 +437,8 @@ def generate_briefing(context: str, fallback: dict) -> dict:
 
     for attempt in range(_MAX_RETRIES):
         try:
-            response = _client.chat.completions.create(
-                model=GroqConfig.MODEL,
+            response = client.chat.completions.create(
+                model=_get_model(),
                 messages=[{"role": "user", "content": prompt}],
             )
             text = _strip_code_fence(response.choices[0].message.content or "")

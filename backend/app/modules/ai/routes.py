@@ -167,6 +167,17 @@ def _resolve_file_selection(question: str, registry: dict, indexed_file_ids: set
     if not question or not registry:
         return None
     q = question.strip().lower()
+    # ponytail: bare filename with extension mentioned anywhere — even in a
+    # long natural question like 'What does "Bereavement-...docx" say about...'
+    # must resolve without requiring @-mention or picker. This check is before
+    # the len>60 guard so long questions still resolve when they name a file.
+    for fid, entry in registry.items():
+        name = (entry.get("name") or "").strip()
+        if not name or fid not in indexed_file_ids:
+            continue
+        name_l = name.lower()
+        if name_l in q:
+            return fid
     if len(q) > 60:
         return None
 
@@ -235,6 +246,57 @@ def _resolve_file_selection(question: str, registry: dict, indexed_file_ids: set
                 return fid
 
     return None
+
+
+def _extract_mentioned_file_ids(question: str, registry: dict, indexed_file_ids: set) -> list:
+    """Generic bare-name extractor — any file whose exact name (with extension)
+    appears anywhere in the question, even in a long sentence. Used so
+    `What does \"Bereavement-...docx\" say?` works without @-mention or picker.
+    Handles typos like `paysip_09.pdf` -> `payslip_09.pdf` via fuzzy token match.
+    Returns all matching indexed file_ids (supports multi-file mentions)."""
+    if not question or not registry:
+        return []
+    import difflib
+    import re
+
+    q = question.strip().lower()
+    matched = []
+    # 1) exact substring (fast, no false positives)
+    for fid, entry in registry.items():
+        if fid not in indexed_file_ids:
+            continue
+        name = (entry.get("name") or "").strip()
+        if not name:
+            continue
+        if name.lower() in q:
+            matched.append(fid)
+    if matched:
+        return matched
+    # 2) typo-tolerant: extract filename-like tokens and fuzzy-match
+    # e.g. "paysip_09.pdf" -> "payslip_09.pdf" (missing 'l')
+    tokens = re.findall(r"[\w\-]+\.[\w]{2,5}", q)
+    # also consider bare names without extension for robustness
+    if not tokens:
+        tokens = re.findall(r"[\w\-]{3,}", q)
+    for token in tokens:
+        best_fid = None
+        best_ratio = 0
+        for fid, entry in registry.items():
+            if fid not in indexed_file_ids or fid in matched:
+                continue
+            name = (entry.get("name") or "").strip().lower()
+            # compare token vs full name and vs name without extension
+            name_no_ext = re.sub(r"\.[a-z0-9]{2,5}$", "", name)
+            for cand in (name, name_no_ext):
+                ratio = difflib.SequenceMatcher(None, token, cand).ratio()
+                if ratio > best_ratio:
+                    best_ratio = ratio
+                    best_fid = fid
+        # typo threshold — 0.85 catches single-char deletions like paysip->payslip
+        # but not distant files; require token length >=4 to avoid tiny false matches
+        if best_fid and best_ratio >= 0.85 and len(token) >= 4:
+            matched.append(best_fid)
+    return matched
 
 
 def _recover_pending_question(user_key: str, session_id: str) -> str | None:
@@ -624,6 +686,13 @@ def api_chat():
     indexed_file_ids = store.indexed_file_ids()
     current_app.logger.info("[api_chat] user_key=%s indexed_files=%d store.count=%d", user_key, len(indexed_file_ids), store.count())
 
+    # ponytail: generic bare-name — any file whose exact name (even with typo like
+    # "paysip_09.pdf" -> "payslip_09.pdf") appears in the question must resolve
+    # without picker/@-mention. Covers any file, multi-file too. Runs even when
+    # file_ids already set so a typo mention can expand the selection.
+    mentioned = _extract_mentioned_file_ids(question, registry, indexed_file_ids)
+    if mentioned:
+        file_ids = list(dict.fromkeys(mentioned + list(file_ids or [])))
     # ponytail: a follow-up like "use Shipments.csv" is a file selection, not a
     # new question. Resolve it to the file and re-answer the original question
     # so the ambiguity prompt doesn't loop. Only rewrite the question when the
@@ -637,14 +706,6 @@ def api_chat():
                 pending = _recover_pending_question(user_key, chat_session["session_id"])
                 if pending:
                     question = pending
-        # ponytail: a short follow-up ("which category has the highest count?")
-        # that names no file stays scoped to the file the previous answer cited
-        # — as long as that file is still relevant to the follow-up. If it no
-        # longer surfaces in the search, fall through to normal ambiguity
-        # detection instead of force-scoping to an unrelated file. A deictic
-        # reference ("what's in this file?") is about that file by definition,
-        # so it skips the similarity gate — a vague "this file" query embeds
-        # nowhere near the cited file's chunks and would wrongly drift away.
         elif len(question.strip()) <= 60 and not _wants_all_documents(question) and not _is_aggregation_question(question):
             ctx = _recover_context_file(user_key, chat_session["session_id"])
             if ctx and ctx in indexed_file_ids:
@@ -943,6 +1004,13 @@ def api_chat_stream():
     indexed_file_ids = store.indexed_file_ids()
     current_app.logger.info("[api_chat_stream] user_key=%s indexed_files=%d store.count=%d", user_key, len(indexed_file_ids), store.count())
 
+    # ponytail: generic bare-name — any file whose exact name (even with typo like
+    # "paysip_09.pdf" -> "payslip_09.pdf") appears in the question must resolve
+    # without picker/@-mention. Covers any file, multi-file too. Runs even when
+    # file_ids already set so a typo mention can expand the selection.
+    mentioned = _extract_mentioned_file_ids(question, registry, indexed_file_ids)
+    if mentioned:
+        file_ids = list(dict.fromkeys(mentioned + list(file_ids or [])))
     # ponytail: a follow-up like "use Shipments.csv" is a file selection, not a
     # new question. Resolve it to the file and re-answer the original question
     # so the ambiguity prompt doesn't loop. Only rewrite the question when the
@@ -956,14 +1024,6 @@ def api_chat_stream():
                 pending = _recover_pending_question(user_key, chat_session["session_id"])
                 if pending:
                     question = pending
-        # ponytail: a short follow-up ("which category has the highest count?")
-        # that names no file stays scoped to the file the previous answer cited
-        # — as long as that file is still relevant to the follow-up. If it no
-        # longer surfaces in the search, fall through to normal ambiguity
-        # detection instead of force-scoping to an unrelated file. A deictic
-        # reference ("what's in this file?") is about that file by definition,
-        # so it skips the similarity gate — a vague "this file" query embeds
-        # nowhere near the cited file's chunks and would wrongly drift away.
         elif len(question.strip()) <= 60 and not _wants_all_documents(question) and not _is_aggregation_question(question):
             ctx = _recover_context_file(user_key, chat_session["session_id"])
             if ctx and ctx in indexed_file_ids:

@@ -10,12 +10,55 @@ export default function Settings() {
   const navigate = useNavigate()
   const [targets, setTargets] = useState({ revenue_mtd: 5200000, attendance: 90, compliance: 80 })
   const [targetsDirty, setTargetsDirty] = useState(false)
+  const [groqKey, setGroqKey] = useState('')
+  const [groqModel, setGroqModel] = useState('llama-3.3-70b-versatile')
+  const [groqMasked, setGroqMasked] = useState('')
+  const [groqConfigured, setGroqConfigured] = useState(false)
+  const [groqSaving, setGroqSaving] = useState(false)
+  const [showGroqKey, setShowGroqKey] = useState(false)
 
   useEffect(() => {
     api('/api/settings/targets')
       .then(setTargets)
       .catch(() => {})
   }, [])
+
+  useEffect(() => {
+    api('/api/settings/llm')
+      .then((d) => {
+        setGroqMasked(d.groq_api_key_masked || '')
+        setGroqConfigured(!!d.groq_configured)
+        setGroqModel(d.groq_model || 'llama-3.3-70b-versatile')
+      })
+      .catch(() => {})
+  }, [])
+
+  async function saveGroq() {
+    if (groqKey && !/^gsk_[a-zA-Z0-9]{20,}$/.test(groqKey.trim())) {
+      return toast('Invalid Groq key — must start with gsk_', 'error')
+    }
+    setGroqSaving(true)
+    try {
+      const body = {}
+      if (groqKey.trim()) body.groq_api_key = groqKey.trim()
+      if (groqModel.trim()) body.groq_model = groqModel.trim()
+      // if user didn't type a new key but we have a masked one, don't send empty key
+      if (!groqKey.trim() && groqConfigured) {
+        // only model change
+        if (!body.groq_model) return toast('Enter a Groq API key or change the model', 'error')
+      }
+      const res = await api('/api/settings/llm', { method: 'PUT', body: JSON.stringify(body) })
+      setGroqMasked(res.groq_api_key_masked || groqMasked)
+      setGroqConfigured(!!res.groq_configured)
+      setGroqModel(res.groq_model || groqModel)
+      setGroqKey('')
+      toast('Groq settings saved — new key active immediately', 'success')
+    } catch (e) {
+      toast(e.message, 'error')
+    } finally {
+      setGroqSaving(false)
+    }
+  }
 
   function setTarget(field, value) {
     const num = value === '' ? '' : Number(value)
@@ -158,6 +201,56 @@ export default function Settings() {
         </div>
         <Button size="sm" onClick={saveTargets} disabled={!targetsDirty}>
           Save targets
+        </Button>
+      </Card>
+
+      <Card className="space-y-4">
+        <h2 className="text-sm font-semibold text-slate-900">AI Provider — Groq</h2>
+        <p className="text-xs text-slate-400">
+          Groq powers AI Chat, compliance, and executive briefings. Key is stored securely on the server and takes effect immediately — no restart needed.
+          {groqConfigured ? (
+            <span className="ml-2 inline-flex items-center rounded bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">Configured: {groqMasked}</span>
+          ) : (
+            <span className="ml-2 inline-flex items-center rounded bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">Not configured</span>
+          )}
+        </p>
+        <Field label="Groq API Key (gsk_...)">
+          <div className="flex gap-2">
+            <input
+              type={showGroqKey ? 'text' : 'password'}
+              className="field flex-1"
+              placeholder={groqMasked ? `Current: ${groqMasked} — enter new to replace` : 'gsk_...'}
+              value={groqKey}
+              onChange={(e) => setGroqKey(e.target.value)}
+            />
+            <Button size="sm" variant="secondary" onClick={() => setShowGroqKey((v) => !v)}>
+              {showGroqKey ? 'Hide' : 'Show'}
+            </Button>
+          </div>
+          <p className="mt-1 text-[11px] text-slate-400">Get a key at console.groq.com — starts with gsk_. Leave blank to keep current key and only change model.</p>
+        </Field>
+        <Field label="Model">
+          <select
+            className="field"
+            value={groqModel}
+            onChange={(e) => setGroqModel(e.target.value)}
+          >
+            <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile (recommended)</option>
+            <option value="openai/gpt-oss-20b">openai/gpt-oss-20b</option>
+            <option value="llama3-8b-8192">llama3-8b-8192 (fast)</option>
+            <option value="llama3-70b-8192">llama3-70b-8192</option>
+            <option value="mixtral-8x7b-32768">mixtral-8x7b-32768</option>
+          </select>
+          <p className="mt-1 text-[11px] text-slate-400">Or type a custom model name:</p>
+          <input
+            className="field mt-1"
+            value={groqModel}
+            onChange={(e) => setGroqModel(e.target.value)}
+            placeholder="llama-3.3-70b-versatile"
+          />
+        </Field>
+        <Button size="sm" onClick={saveGroq} disabled={groqSaving}>
+          {groqSaving ? 'Saving…' : 'Save Groq settings'}
         </Button>
       </Card>
 

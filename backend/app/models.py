@@ -811,3 +811,11 @@ class Role(Base):
     permissions = Column(JSON, default=list)
     users = Column(Integer, default=0)
     created_at = Column(Float, default=_ts)
+
+
+class AppSetting(Base):
+    __tablename__ = "app_settings"
+
+    key = Column(String(100), primary_key=True)
+    value = Column(Text, default="")
+    updated_at = Column(Float, default=_ts, onupdate=_ts)
