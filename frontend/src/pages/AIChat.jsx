@@ -40,6 +40,21 @@ function _similarity(a, b) {
   return (a.length + b.length - d) / (a.length + b.length)
 }
 
+// ponytail: wrap bare filenames in chat response with file URL so user can click
+function linkifyFiles(text, docs) {
+  if (!text || !docs?.length) return text
+  let out = text
+  // don't double-wrap already linked [name](url)
+  docs.forEach(({ file_id, name }) => {
+    if (!name || !file_id) return
+    const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    // match name not already inside ]( or ](
+    const re = new RegExp(`(?<!\\[)${esc}(?!\\]\\()`, 'g')
+    out = out.replace(re, `[${name}](/api/files/${file_id}/open)`)
+  })
+  return out
+}
+
 const suggestedFollowUps = [
   'What is the process for applying for maternity leave?',
   'Who approves leave for Heads of Department?',
@@ -75,6 +90,7 @@ export default function AIChat() {
   const [mentionIdx, setMentionIdx] = useState(0)
   const [selectedFileIds, setSelectedFileIds] = useState([])
   const [fileSearch, setFileSearch] = useState('')
+  const [mode, setMode] = useState('ai') // ponytail: ai | file — separates tasks
   const inputRef = useRef(null)
   const mentionListRef = useRef(null)
 
@@ -220,7 +236,7 @@ export default function AIChat() {
     streamOwnerRef.current = true
     activeStreamSessionId = sessionId
     setMessages((prev) => [...prev, { id: tempId, role: 'assistant', content: '', sources: [], suggestions: [], selectableFiles: [] }])
-    const body = { question: content, session_id: sessionId, department: activeDept }
+    const body = { question: content, session_id: sessionId, department: activeDept, mode }
     if (fileIds?.length) body.file_ids = fileIds
 
     const res = await fetch('/api/chat/stream', {
@@ -409,10 +425,16 @@ id: uuidCounter++,
   function newChat() {
     setMessages([])
     setActiveConv(null)
+    setSelectedFileIds([])
+    setFileSearch('')
+    // ponytail: new chat = new context, don't carry selected files/history
+    if (sessionId) messagesCacheRef.current[sessionId] = []
     api('/api/chat/sessions', { method: 'POST', body: '{}' })
       .then((data) => {
         setSessionId(data.session.session_id)
+        setActiveConv(data.session.session_id)
         loadedForRef.current = data.session.session_id
+        messagesCacheRef.current[data.session.session_id] = []
         setSessions((prev) => [data.session, ...prev])
         toast('Started a new conversation', 'info')
       })
@@ -599,6 +621,9 @@ id: uuidCounter++,
                 type="button"
                 onClick={() => {
                   setMessages([])
+                  setSelectedFileIds([])
+                  if (sessionId) messagesCacheRef.current[sessionId] = []
+                  if (sessionId) api(`/api/chat/session?session_id=${sessionId}`, { method: 'DELETE' }).catch(() => {})
                   toast('Conversation cleared', 'info')
                 }}
                 className="rounded-lg p-2 text-slate-400 hover:bg-slate-50 hover:text-slate-600"
@@ -648,7 +673,7 @@ id: uuidCounter++,
                   ) : (
                     <>
                       <div className="rounded-2xl rounded-bl-md border border-slate-100 bg-slate-50 px-4 py-3 text-sm leading-relaxed text-slate-700">
-                        <MessageBody text={msg.content} />
+                        <MessageBody text={linkifyFiles(msg.content, [...indexedDocs, ...(msg.sources || []).map(s => ({ file_id: s.file_id, name: s.name }))])} />
                       </div>
                       {msg.suggestions?.length > 0 && (
                         <div className="flex flex-wrap gap-2 pl-1">
@@ -680,6 +705,23 @@ id: uuidCounter++,
           </div>
 
           <div className="border-t border-slate-100 p-3">
+            {/* ponytail: separate tasks — AI vs Files */}
+            <div className="mb-2 flex gap-1 rounded-lg bg-slate-100 p-1">
+              <button
+                type="button"
+                onClick={() => setMode('ai')}
+                className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition ${mode === 'ai' ? 'bg-white text-navy-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                <Sparkles className="h-3.5 w-3.5" /> AI
+              </button>
+              <button
+                type="button"
+                onClick={() => setMode('file')}
+                className={`flex flex-1 items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition ${mode === 'file' ? 'bg-white text-navy-900 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
+              >
+                <FileText className="h-3.5 w-3.5" /> Files
+              </button>
+            </div>
             <form
               onSubmit={(e) => {
                 e.preventDefault()
@@ -713,7 +755,7 @@ id: uuidCounter++,
                   value={input}
                   onChange={(e) => handleInputChange(e.target.value)}
                   onKeyDown={handleInputKeyDown}
-                  placeholder="Ask anything about school knowledge..."
+                  placeholder={mode === 'file' ? 'Ask for files — e.g. give me bank_statement files' : 'Ask anything about school knowledge...'}
                   className="w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-navy-400 focus:bg-white focus:ring-2 focus:ring-navy-100"
                 />
               </div>

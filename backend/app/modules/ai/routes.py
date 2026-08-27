@@ -350,6 +350,18 @@ def _wants_all_documents(question: str) -> bool:
     ))
 
 
+def _is_file_url_request(question: str) -> bool:
+    """True if user just wants the file link (give me this file) — return URL wrap, no LLM."""
+    ql = (question or "").lower()
+    if not ql:
+        return False
+    triggers = ["give me", "send me", "provide me", "share", "download", "open ", "get me", "give this", "send this"]
+    if not any(t in ql for t in triggers):
+        return False
+    # must reference a file (extension, deictic, or generic "files" for prefix search like "bank_statement files")
+    return bool(re.search(r"(\.\w{2,5}\b|this file|that file|the file|files\b)", ql))
+
+
 def _is_aggregation_question(question: str) -> bool:
     """True for count/compare/enumeration questions where excerpt sampling
     hallucinates ('how many', 'which city has the highest', 'net pay in each').
@@ -670,6 +682,7 @@ def api_chat():
     session_id = (data.get("session_id") or "").strip() or None
     history  = data.get("history", [])
     agent_scope = (data.get("agent_scope") or "").strip()
+    mode = (data.get("mode") or "").strip().lower()  # ponytail: ai | file button
 
     if not question:
         return jsonify({"error": "No question provided"}), 400
@@ -712,6 +725,117 @@ def api_chat():
                 deictic = bool(re.search(r"\b(this|that|the|above)\s+(file|document|spreadsheet|sheet)\b", question.lower()))
                 if deictic or _ctx_relevant(store, question, ctx):
                     file_ids = [ctx]
+
+    # ponytail: file URL request — give link wrap, no LLM chat response
+    # mode button separates tasks: file → always return URLs, ai → never return URLs
+    is_file_req = _is_file_url_request(question)
+    if mode == "file":
+        is_file_req = True
+    elif mode == "ai":
+        is_file_req = False
+    if is_file_req:
+        ql = question.lower()
+        is_generic = ("files" in ql or mode == "file") and not re.search(r"\.\w{2,5}\b", ql)
+        if not file_ids or is_generic:
+            if is_generic:
+                file_ids = []
+            generic_ids = []
+            # ponytail: universal numbered file — any new file like "report 12" (typo tolerant)
+            nums = re.findall(r"\d+", ql)
+            if nums:
+                import difflib
+                q_tokens = re.findall(r"[a-z0-9_]+", ql)
+                for fid, entry in registry.items():
+                    if fid not in indexed_file_ids:
+                        continue
+                    name = (entry.get("name") or "").lower()
+                    name_nums = re.findall(r"\d+", name)
+                    if not name_nums:
+                        continue
+                    # number must match any query number
+                    num_match = False
+                    for n_str in nums:
+                        try:
+                            n = int(n_str)
+                        except:
+                            continue
+                        for nn in name_nums:
+                            try:
+                                if int(nn) == n:
+                                    num_match = True
+                                    break
+                            except:
+                                continue
+                        if num_match:
+                            break
+                    if not num_match:
+                        continue
+                    # name base fuzzy must match query token (any typo)
+                    name_words = re.findall(r"[a-z0-9]+", name.replace("_", " "))
+                    name_base = re.sub(r"[\d_]+", "", name).replace(".", "")
+                    found = False
+                    for qtok in q_tokens:
+                        if len(qtok) < 3:
+                            continue
+                        if qtok in name:
+                            found = True
+                            break
+                        if difflib.SequenceMatcher(None, qtok, name_base).ratio() >= 0.7:
+                            found = True
+                            break
+                        if any(difflib.SequenceMatcher(None, qtok, w).ratio() >= 0.75 for w in name_words):
+                            found = True
+                            break
+                    if found:
+                        if fid not in generic_ids:
+                            generic_ids.append(fid)
+            if not generic_ids:
+                import difflib, re as _re
+                current_app.logger.info(f"DEBUG: generic_ids empty, ql={ql}")
+                m = _re.search(r"(\w+)\s+files?", ql)
+                if m:
+                    current_app.logger.info(f"DEBUG: prefix match: {m.group(1)}")
+                if m:
+                    prefix = m.group(1)
+                    # skip generic trigger words
+                    if prefix not in ("give","send","this","that","the","all","my","please","me"):
+                        for fid, entry in registry.items():
+                            if fid not in indexed_file_ids:
+                                continue
+                            name = (entry.get("name") or "").lower()
+                            # ponytail: typo tolerant prefix — bankstatment -> bank_statement (any typo, thresh 0.7 for missing chars)
+                            name_norm = name.replace("_","").replace(".","")
+                            prefix_norm = prefix.replace("_","")
+                            if prefix in name or difflib.SequenceMatcher(None, prefix_norm, name_norm).ratio() >= 0.7 or any(difflib.SequenceMatcher(None, prefix, w).ratio() >= 0.8 for w in _re.findall(r"[a-z0-9_]+", name)):
+                                generic_ids.append(fid)
+            if not generic_ids:
+                import difflib
+                tokens = [t for t in re.findall(r"[a-z0-9_]+", ql) if len(t) >= 4 and t not in ("give","send","provide","share","download","open","file","files","please")]
+                for fid, entry in registry.items():
+                    if fid not in indexed_file_ids:
+                        continue
+                    name = (entry.get("name") or "").lower()
+                    name_words = re.findall(r"[a-z0-9_]+", name)
+                    name_norm = name.replace("_","").replace(".","")
+                    # ponytail: any typo — paysip -> payslip, bankstatment -> bank_statement (thresh 0.7)
+                    if any(tok in name or difflib.SequenceMatcher(None, tok.replace("_",""), name_norm).ratio() >= 0.7 or any(difflib.SequenceMatcher(None, tok, w).ratio() >= 0.8 for w in name_words) for tok in tokens):
+                        if fid not in generic_ids:
+                            generic_ids.append(fid)
+            if not generic_ids and "files" in ql:
+                generic_ids = list(indexed_file_ids)
+            if generic_ids:
+                # limit to 30 to avoid huge response
+                file_ids = generic_ids[:30]
+        if file_ids:
+            links = []
+            for fid in file_ids:
+                entry = registry.get(fid, {}) or {}
+                name = entry.get("name") or fid
+                links.append(f"[{name}](/api/files/{fid}/open)")
+            resp_text = "\n\n".join(links)
+            append_chat_message(user_key, "user", question, session_id=chat_session["session_id"])
+            aid = append_chat_message(user_key, "assistant", resp_text, session_id=chat_session["session_id"])
+            return jsonify({"response": resp_text, "sources": [], "chunks_used": 0, "timestamp": time.time(), "session_id": chat_session["session_id"], "message_id": aid})
 
     route = classify(question, department)
     # Strict dept boundary: don't answer outside-dept questions (Q: finance user asking compliance)
@@ -820,40 +944,56 @@ def api_chat():
     text = ""
     # Exact answers: selected files OR any count/compare question with a
     # spreadsheet in scope get get_spreadsheet_stats, never a 6-chunk guess.
+    # ponytail: only force spreadsheet tool when selected/scope actually contains a spreadsheet;
+    # for docx/pdf aggregation (e.g. bank_statement_02.docx credits), answer from full doc text.
     sheet_ids = _spreadsheet_candidates(registry, source_filter, indexed_file_ids) if _is_aggregation_question(question) else []
+    selected_has_sheet = bool(file_ids and any(
+        str(registry.get(fid, {}).get("name") or "").lower().endswith((".xlsx", ".xls", ".csv"))
+        for fid in file_ids
+    ))
     if file_ids:
-        from app.services.tools import SPREADSHEET_TOOLS
-
-        tool_defs = SPREADSHEET_TOOLS
         selected = ", ".join(
             f"{fid}: {registry.get(fid, {}).get('name', fid)}" for fid in file_ids
         )
         system_prompt += (
             "\n\nSELECTED FILES: " + selected +
-            "\nINSTRUCTIONS: The user selected files. If they ask for counts, "
-            "averages, or comparisons, call get_spreadsheet_stats with the "
-            "matching file_id and the right column to get EXACT numbers — for "
-            "totals or comparisons spanning multiple selected files, make one "
-            "call PER file_id. Never invent counts. "
-            "If the question asks about a document type that none of the "
-            "selected files contain (e.g. payslips when only an invoice "
-            "register is selected), state which files ARE selected and ask "
-            "the user to select the right ones — never present unrelated "
-            "file content as the answer. "
+            "\nINSTRUCTIONS: The user selected files. "
             "Answer other questions from the document excerpts above. "
             "Never reveal passwords, API keys, or credentials found in the files; "
             "if the answer would expose one, say the company/email but redact the "
             "secret as [REDACTED]."
         )
-        if _is_aggregation_question(question):
+        if selected_has_sheet:
+            from app.services.tools import SPREADSHEET_TOOLS
+            tool_defs = SPREADSHEET_TOOLS
             system_prompt += (
-                "\nMANDATORY: This is a counts/comparison question. You MUST call "
-                "get_spreadsheet_stats BEFORE answering — once per relevant "
-                "selected file (file_id from SELECTED FILES above; first without "
-                "column to list columns, then with the matching column). NEVER "
-                "count from document excerpts — they are samples and will give "
-                "wrong totals."
+                " If they ask for counts, averages, or comparisons on a spreadsheet, call get_spreadsheet_stats "
+                "with the matching file_id and the right column to get EXACT numbers — for totals or comparisons spanning "
+                "multiple selected files, make one call PER spreadsheet file_id. Never invent counts. "
+                "If the question asks about a document type that none of the selected files contain (e.g. payslips when only an invoice "
+                "register is selected), state which files ARE selected and ask the user to select the right ones — never present unrelated "
+                "file content as the answer."
             )
+            if _is_aggregation_question(question):
+                system_prompt += (
+                    "\nMANDATORY: This is a counts/comparison question on a spreadsheet. You MUST call "
+                    "get_spreadsheet_stats BEFORE answering — once per relevant selected spreadsheet file_id (first without "
+                    "column to list columns, then with the matching column). NEVER count from document excerpts — they are samples and will give "
+                    "wrong totals."
+                )
+        elif _is_aggregation_question(question):
+            tool_defs = []
+            system_prompt += (
+                " This is a counts/totals question on non-spreadsheet documents (PDF/DOCX). Do NOT call get_spreadsheet_stats — it only works on xlsx/csv. "
+                "Answer by counting directly from the COMPLETE DOCUMENT TEXT provided above. Be exact."
+            )
+        else:
+            tool_defs = tools_for_context(department, agent_scope) if not top_chunks or route["intent"] not in ("document", "general") else []
+            if top_chunks and route["intent"] in ("document", "general") and not tool_defs:
+                system_prompt += (
+                    "\n\nNo tools are available in this mode. Answer only from the document excerpts above. Do not mention or describe using any tool. "
+                    "Never reveal passwords, API keys, or credentials found in the documents; redact any secret as [REDACTED]."
+                )
     elif sheet_ids:
         from app.services.tools import SPREADSHEET_TOOLS
 
@@ -990,6 +1130,7 @@ def api_chat_stream():
     session_id = (data.get("session_id") or "").strip() or None
     history  = data.get("history", [])
     agent_scope = (data.get("agent_scope") or "").strip()
+    mode = (data.get("mode") or "").strip().lower()  # ponytail: ai | file
 
     if not question:
         return jsonify({"error": "No question provided"}), 400
@@ -1030,6 +1171,112 @@ def api_chat_stream():
                 deictic = bool(re.search(r"\b(this|that|the|above)\s+(file|document|spreadsheet|sheet)\b", question.lower()))
                 if deictic or _ctx_relevant(store, question, ctx):
                     file_ids = [ctx]
+
+    # ponytail: file URL request — give link wrap, no LLM (stream endpoint returns JSON, frontend handles non-SSE)
+    is_file_req = _is_file_url_request(question)
+    if mode == "file":
+        is_file_req = True
+    elif mode == "ai":
+        is_file_req = False
+    if is_file_req:
+        ql = question.lower()
+        is_generic = ("files" in ql or mode == "file") and not re.search(r"\.\w{2,5}\b", ql)
+        if not file_ids or is_generic:
+            if is_generic:
+                file_ids = []
+            generic_ids = []
+            # ponytail: universal numbered file — any new file like "report 12" (typo tolerant)
+            nums = re.findall(r"\d+", ql)
+            if nums:
+                import difflib
+                q_tokens = re.findall(r"[a-z0-9_]+", ql)
+                for fid, entry in registry.items():
+                    if fid not in indexed_file_ids:
+                        continue
+                    name = (entry.get("name") or "").lower()
+                    name_nums = re.findall(r"\d+", name)
+                    if not name_nums:
+                        continue
+                    # number must match any query number
+                    num_match = False
+                    for n_str in nums:
+                        try:
+                            n = int(n_str)
+                        except:
+                            continue
+                        for nn in name_nums:
+                            try:
+                                if int(nn) == n:
+                                    num_match = True
+                                    break
+                            except:
+                                continue
+                        if num_match:
+                            break
+                    if not num_match:
+                        continue
+                    # name base fuzzy must match query token (any typo)
+                    name_words = re.findall(r"[a-z0-9]+", name.replace("_", " "))
+                    name_base = re.sub(r"[\d_]+", "", name).replace(".", "")
+                    found = False
+                    for qtok in q_tokens:
+                        if len(qtok) < 3:
+                            continue
+                        if qtok in name:
+                            found = True
+                            break
+                        if difflib.SequenceMatcher(None, qtok, name_base).ratio() >= 0.7:
+                            found = True
+                            break
+                        if any(difflib.SequenceMatcher(None, qtok, w).ratio() >= 0.75 for w in name_words):
+                            found = True
+                            break
+                    if found:
+                        if fid not in generic_ids:
+                            generic_ids.append(fid)
+            if not generic_ids:
+                import difflib, re as _re
+                current_app.logger.info(f"DEBUG: generic_ids empty, ql={ql}")
+                m = _re.search(r"(\w+)\s+files?", ql)
+                if m:
+                    current_app.logger.info(f"DEBUG: prefix match: {m.group(1)}")
+                if m:
+                    prefix = m.group(1)
+                    if prefix not in ("give","send","this","that","the","all","my","please","me"):
+                        for fid, entry in registry.items():
+                            if fid not in indexed_file_ids:
+                                continue
+                            name = (entry.get("name") or "").lower()
+                            name_norm = name.replace("_","")
+                            prefix_norm = prefix.replace("_","")
+                            if prefix in name or difflib.SequenceMatcher(None, prefix_norm, name_norm).ratio() >= 0.7 or any(difflib.SequenceMatcher(None, prefix, w).ratio() >= 0.8 for w in _re.findall(r"[a-z0-9_]+", name)):
+                                generic_ids.append(fid)
+            if not generic_ids:
+                import difflib
+                tokens = [t for t in re.findall(r"[a-z0-9_]+", ql) if len(t) >= 4 and t not in ("give","send","provide","share","download","open","file","files","please")]
+                for fid, entry in registry.items():
+                    if fid not in indexed_file_ids:
+                        continue
+                    name = (entry.get("name") or "").lower()
+                    name_words = re.findall(r"[a-z0-9_]+", name)
+                    name_norm = name.replace("_","").replace(".","")
+                    if any(tok in name or difflib.SequenceMatcher(None, tok.replace("_",""), name_norm).ratio() >= 0.7 or any(difflib.SequenceMatcher(None, tok, w).ratio() >= 0.8 for w in name_words) for tok in tokens):
+                        if fid not in generic_ids:
+                            generic_ids.append(fid)
+            if not generic_ids and "files" in ql:
+                generic_ids = list(indexed_file_ids)
+            if generic_ids:
+                file_ids = generic_ids[:30]
+        if file_ids:
+            links = []
+            for fid in file_ids:
+                entry = registry.get(fid, {}) or {}
+                name = entry.get("name") or fid
+                links.append(f"[{name}](/api/files/{fid}/open)")
+            resp_text = "\n\n".join(links)
+            append_chat_message(user_key, "user", question, session_id=chat_session["session_id"])
+            aid = append_chat_message(user_key, "assistant", resp_text, session_id=chat_session["session_id"])
+            return jsonify({"response": resp_text, "sources": [], "chunks_used": 0, "timestamp": time.time(), "session_id": chat_session["session_id"], "message_id": aid})
 
     route = classify(question, department)
     if _is_outside_department(question, department, file_ids):
@@ -1131,42 +1378,56 @@ def api_chat_stream():
 
     tool_text = ""
     tool_calls = []
-    # Exact answers: selected files OR any count/compare question with a
-    # spreadsheet in scope get get_spreadsheet_stats, never a 6-chunk guess.
+    # ponytail: only force spreadsheet tool when selected/scope actually contains a spreadsheet;
+    # for docx/pdf aggregation, answer from full doc text.
     sheet_ids = _spreadsheet_candidates(registry, source_filter, indexed_file_ids) if _is_aggregation_question(question) else []
+    selected_has_sheet = bool(file_ids and any(
+        str(registry.get(fid, {}).get("name") or "").lower().endswith((".xlsx", ".xls", ".csv"))
+        for fid in file_ids
+    ))
     if file_ids:
-        from app.services.tools import SPREADSHEET_TOOLS
-
-        tool_defs = SPREADSHEET_TOOLS
         selected = ", ".join(
             f"{fid}: {registry.get(fid, {}).get('name', fid)}" for fid in file_ids
         )
         system_prompt += (
             "\n\nSELECTED FILES: " + selected +
-            "\nINSTRUCTIONS: The user selected files. If they ask for counts, "
-            "averages, or comparisons, call get_spreadsheet_stats with the "
-            "matching file_id and the right column to get EXACT numbers — for "
-            "totals or comparisons spanning multiple selected files, make one "
-            "call PER file_id. Never invent counts. "
-            "If the question asks about a document type that none of the "
-            "selected files contain (e.g. payslips when only an invoice "
-            "register is selected), state which files ARE selected and ask "
-            "the user to select the right ones — never present unrelated "
-            "file content as the answer. "
+            "\nINSTRUCTIONS: The user selected files. "
             "Answer other questions from the document excerpts above. "
             "Never reveal passwords, API keys, or credentials found in the files; "
             "if the answer would expose one, say the company/email but redact the "
             "secret as [REDACTED]."
         )
-        if _is_aggregation_question(question):
+        if selected_has_sheet:
+            from app.services.tools import SPREADSHEET_TOOLS
+            tool_defs = SPREADSHEET_TOOLS
             system_prompt += (
-                "\nMANDATORY: This is a counts/comparison question. You MUST call "
-                "get_spreadsheet_stats BEFORE answering — once per relevant "
-                "selected file (file_id from SELECTED FILES above; first without "
-                "column to list columns, then with the matching column). NEVER "
-                "count from document excerpts — they are samples and will give "
-                "wrong totals."
+                " If they ask for counts, averages, or comparisons on a spreadsheet, call get_spreadsheet_stats "
+                "with the matching file_id and the right column to get EXACT numbers — for totals or comparisons spanning "
+                "multiple selected files, make one call PER spreadsheet file_id. Never invent counts. "
+                "If the question asks about a document type that none of the selected files contain (e.g. payslips when only an invoice "
+                "register is selected), state which files ARE selected and ask the user to select the right ones — never present unrelated "
+                "file content as the answer."
             )
+            if _is_aggregation_question(question):
+                system_prompt += (
+                    "\nMANDATORY: This is a counts/comparison question on a spreadsheet. You MUST call "
+                    "get_spreadsheet_stats BEFORE answering — once per relevant selected spreadsheet file_id (first without "
+                    "column to list columns, then with the matching column). NEVER count from document excerpts — they are samples and will give "
+                    "wrong totals."
+                )
+        elif _is_aggregation_question(question):
+            tool_defs = []
+            system_prompt += (
+                " This is a counts/totals question on non-spreadsheet documents (PDF/DOCX). Do NOT call get_spreadsheet_stats — it only works on xlsx/csv. "
+                "Answer by counting directly from the COMPLETE DOCUMENT TEXT provided above. Be exact."
+            )
+        else:
+            tool_defs = tools_for_context(department, agent_scope) if not top_chunks or route["intent"] not in ("document", "general") else []
+            if top_chunks and route["intent"] in ("document", "general") and not tool_defs:
+                system_prompt += (
+                    "\n\nNo tools are available in this mode. Answer only from the document excerpts above. Do not mention or describe using any tool. "
+                    "Never reveal passwords, API keys, or credentials found in the documents; redact any secret as [REDACTED]."
+                )
     elif sheet_ids:
         from app.services.tools import SPREADSHEET_TOOLS
 
