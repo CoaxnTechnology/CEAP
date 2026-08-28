@@ -122,21 +122,35 @@ export default function Header({
             <div className="absolute right-0 mt-2 w-80 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xl">
               <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
                 <span className="text-sm font-semibold">Notifications</span>
-                <button
-                  type="button"
-                  className="text-xs font-medium text-navy-600"
-                  onClick={() => {
-                    dispatch({ type: 'MARK_ALL_NOTIFS_READ' })
-                    fetch('/api/notifications/read', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({ ids: notifications.map((n) => n.id) }),
-                    }).catch(() => {})
-                    toast('All marked read', 'success')
-                  }}
-                >
-                  Mark all read
-                </button>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    className="text-xs font-medium text-navy-600"
+                    onClick={() => {
+                      dispatch({ type: 'MARK_ALL_NOTIFS_READ' })
+                      fetch('/api/notifications/read', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ ids: notifications.map((n) => n.id) }),
+                      }).catch(() => {})
+                      toast('All marked read', 'success')
+                    }}
+                  >
+                    Mark all read
+                  </button>
+                  <button
+                    type="button"
+                    className="text-xs font-medium text-danger-600 hover:text-danger-700"
+                    onClick={() => {
+                      dispatch({ type: 'CLEAR_NOTIFICATIONS' })
+                      fetch('/api/notifications/clear', { method: 'POST', credentials: 'include' }).catch(() => {})
+                      toast('Notifications cleared', 'success')
+                      setShowNotifs(false)
+                    }}
+                  >
+                    Clear
+                  </button>
+                </div>
               </div>
               <ul className="max-h-72 overflow-y-auto">
                 {notifications.map((n) => {

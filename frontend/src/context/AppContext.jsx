@@ -207,6 +207,9 @@ function reducer(state, action) {
         notifications: state.notifications.map((n) => ({ ...n, unread: false })),
       }
 
+    case 'CLEAR_NOTIFICATIONS':
+      return { ...state, notifications: [] }
+
     case 'SET_NOTIFICATIONS':
       return { ...state, notifications: action.payload }
 
@@ -362,10 +365,14 @@ export function AppProvider({ children }) {
     hydrate(base, loadSession())
   )
 
-  // Persist key session fields
+  // Persist key session fields — dark mode always persisted
   useEffect(() => {
     if (!state.isAuthenticated) {
-      // Keep dark mode only when logged out
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY)
+        const prev = raw ? JSON.parse(raw) : {}
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...prev, darkMode: state.darkMode }))
+      } catch {}
       return
     }
     const toSave = {

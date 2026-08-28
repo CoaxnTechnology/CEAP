@@ -153,11 +153,17 @@ html.dark .text-slate-600 { color: #94a3b8 !important; }
 html.dark .text-slate-500 { color: #94a3b8 !important; }
 html.dark .text-slate-400 { color: #64748b !important; }
 html.dark .text-ink { color: #e2e8f0 !important; }
+html.dark .text-navy-900 { color: #f1f5f9 !important; }
+html.dark .text-navy-800 { color: #e2e8f0 !important; }
+html.dark .text-navy-800\/80 { color: rgba(226, 232, 240, 0.8) !important; }
+html.dark .text-navy-700 { color: #cbd5e1 !important; }
 
 html.dark .border-slate-200 { border-color: #334155 !important; }
 html.dark .border-slate-200\/80 { border-color: #334155 !important; }
 html.dark .border-slate-100 { border-color: #2b3648 !important; }
 html.dark .border-slate-300 { border-color: #475569 !important; }
+html.dark .border-navy-100 { border-color: #1d3554 !important; }
+html.dark .border-navy-200 { border-color: #243b53 !important; }
 html.dark .divide-slate-50 > :not([hidden]) ~ :not([hidden]) { border-color: #2b3648 !important; }
 html.dark .divide-slate-100 > :not([hidden]) ~ :not([hidden]) { border-color: #2b3648 !important; }
 html.dark .ring-slate-100 { --tw-ring-color: #2b3648 !important; }

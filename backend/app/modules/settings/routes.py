@@ -200,6 +200,22 @@ def notifications_read():
         db.close()
 
 
+@settings_bp.route("/api/notifications/clear", methods=["POST"])
+@login_required
+def notifications_clear():
+    from flask import session
+    email = session.get("user")
+    if not email:
+        return jsonify({"error": "Not authenticated"}), 401
+    db = SessionLocal()
+    try:
+        db.query(Notification).filter(Notification.user_email == email).delete()
+        db.commit()
+        return jsonify({"success": True})
+    finally:
+        db.close()
+
+
 def _mask_key(key: str) -> str:
     if not key or len(key) < 12:
         return "***" if key else ""
