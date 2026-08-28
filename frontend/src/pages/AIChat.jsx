@@ -495,7 +495,7 @@ id: uuidCounter++,
         <div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-900">AI Chat</h1>
           <p className="mt-1 text-sm text-slate-500">
-            Ask anything about school knowledge \u2014 answers always include citations
+            Ask anything about school knowledge
           </p>
         </div>
         <Button size="sm" variant="secondary" onClick={newChat}>
