@@ -90,5 +90,5 @@ class OfficeConfig:
     SMTP_PORT = int(os.getenv("SMTP_PORT", "587"))
     SMTP_USER = os.getenv("SMTP_USER", "")
     SMTP_PASS = os.getenv("SMTP_PASS", "")
-    SMTP_FROM = os.getenv("SMTP_FROM", "coaxntechnology@gmail.com")
+    SMTP_FROM = os.getenv("SMTP_FROM", "noreply@coaxn.com")
     NOTIFICATIONS_ENABLED = os.getenv("NOTIFICATIONS_ENABLED", "1") == "1"

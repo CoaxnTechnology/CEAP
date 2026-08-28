@@ -813,6 +813,20 @@ class Role(Base):
     created_at = Column(Float, default=_ts)
 
 
+class PasswordResetToken(Base):
+    __tablename__ = "password_reset_tokens"
+
+    token = Column(String(128), primary_key=True)
+    email = Column(String(255), nullable=False, index=True)
+    expires_at = Column(Float, nullable=False)
+    created_at = Column(Float, default=_ts)
+
+    __table_args__ = (
+        Index("idx_reset_tokens_email", email),
+        Index("idx_reset_tokens_expires", expires_at),
+    )
+
+
 class AppSetting(Base):
     __tablename__ = "app_settings"
 

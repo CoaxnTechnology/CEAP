@@ -10,15 +10,23 @@ export default function ForgotPassword() {
   const [sent, setSent] = useState(false)
   const [loading, setLoading] = useState(false)
 
-  function handleSubmit(e) {
+  const [error, setError] = useState('')
+  async function handleSubmit(e) {
     e.preventDefault()
     if (!email.trim()) return
     setLoading(true)
-    setTimeout(() => {
-      setLoading(false)
+    setError('')
+    try {
+      const res = await fetch('/api/auth/forgot-password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, credentials: 'include', body: JSON.stringify({ email: email.trim() }) })
+      if (!res.ok) throw new Error('Failed')
       setSent(true)
-      toast(`Reset link sent to ${email}`, 'success')
-    }, 800)
+      toast(`If an account exists for ${email}, a reset link has been sent.`, 'success')
+    } catch {
+      setError('Could not send reset link. Please try again.')
+      toast('Could not send reset link', 'error')
+    } finally {
+      setLoading(false)
+    }
   }
 
   return (
@@ -36,7 +44,7 @@ export default function ForgotPassword() {
             <>
               <h1 className="text-xl font-bold text-slate-900">Reset password</h1>
               <p className="mt-1 text-sm text-slate-500">
-                Enter your work email and we&apos;ll send a reset link (prototype simulation).
+                Enter your work email and we&apos;ll send a reset link.
               </p>
               <form onSubmit={handleSubmit} className="mt-6 space-y-4">
                 <div>
@@ -50,6 +58,7 @@ export default function ForgotPassword() {
                     className="w-full rounded-lg border border-slate-200 bg-slate-50 px-3 py-2.5 text-sm outline-none focus:border-navy-400 focus:bg-white focus:ring-2 focus:ring-navy-100"
                   />
                 </div>
+                {error && <p className="text-sm text-danger-600">{error}</p>}
                 <Button type="submit" className="w-full" disabled={loading}>
                   {loading ? 'Sending…' : 'Send reset link'}
                 </Button>
@@ -63,8 +72,8 @@ export default function ForgotPassword() {
               <h1 className="mt-4 text-xl font-bold text-slate-900">Check your inbox</h1>
               <p className="mt-2 text-sm text-slate-500">
                 If an account exists for <strong>{email}</strong>, a reset link has been sent.
-                (Demo: no real email is sent.)
               </p>
+              {error && <p className="mt-2 text-sm text-danger-600">{error}</p>}
               <Button
                 className="mt-6 w-full"
                 onClick={() => {

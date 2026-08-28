@@ -156,6 +156,73 @@ def api_login():
     return jsonify({"success": False, "error": "Invalid credentials"}), 401
 
 
+_forgot_limit = {}  # ip -> [timestamps]
+
+
+@auth_bp.route("/api/auth/forgot-password", methods=["POST"])
+def api_forgot_password():
+    data = request.json or {}
+    email = (data.get("email") or "").strip().lower()
+    ip = request.remote_addr or "unknown"
+    now = time.time()
+    hits = [t for t in _forgot_limit.get(ip, []) if now - t < 60]
+    if len(hits) >= 3:
+        return jsonify({"success": True}), 200
+    hits.append(now)
+    _forgot_limit[ip] = hits
+    if not email or "@" not in email:
+        return jsonify({"success": True}), 200
+    user = get_user_by_email(email)
+    if user:
+        token = secrets.token_urlsafe(32)
+        expires_at = now + 15 * 60
+        from app.db import SessionLocal
+        from app.models import PasswordResetToken
+        db = SessionLocal()
+        try:
+            db.query(PasswordResetToken).filter(PasswordResetToken.email == email).delete()
+            db.add(PasswordResetToken(token=token, email=email, expires_at=expires_at, created_at=now))
+            db.commit()
+        finally:
+            db.close()
+        scheme = "https" if request.headers.get("X-Forwarded-Proto") == "https" else request.scheme
+        host = request.headers.get("Host") or request.host
+        reset_link = f"{scheme}://{host}/reset-password?token={token}"
+        from app.services.notification_service import send_email
+        # ponytail: Brevo (smtp-relay.brevo.com) is current verified sender; keep as is,
+        # only FROM changed to noreply@coaxn.com — add SPF/DKIM for coaxn.com in Brevo dashboard
+        # or switch to Zoho (smtp.zoho.com:587) by setting SMTP_HOST/USER/PASS in .env
+        send_email(email, "Reset your CEAP password", f"Reset your CEAP password:\n\n{reset_link}\n\nThis link expires in 15 minutes. If you didn't request it, ignore this email.")
+    return jsonify({"success": True}), 200
+
+
+@auth_bp.route("/api/auth/reset-password", methods=["POST"])
+def api_reset_password():
+    data = request.json or {}
+    token = (data.get("token") or "").strip()
+    new_password = data.get("new_password") or ""
+    if not token or not new_password or len(new_password) < 4:
+        return jsonify({"error": "Invalid token or password"}), 400
+    from app.db import SessionLocal
+    from app.models import PasswordResetToken
+    db = SessionLocal()
+    try:
+        row = db.query(PasswordResetToken).filter(PasswordResetToken.token == token).first()
+        if not row or row.expires_at < time.time():
+            if row:
+                db.delete(row)
+                db.commit()
+            return jsonify({"error": "Invalid or expired token"}), 400
+        email = row.email
+        db.delete(row)
+        db.commit()
+    finally:
+        db.close()
+    if not update_user(email, {"password": new_password, "must_change_password": 0}):
+        return jsonify({"error": "User not found"}), 404
+    return jsonify({"success": True})
+
+
 @auth_bp.route("/api/me/password", methods=["POST"])
 @login_required
 def api_change_own_password():

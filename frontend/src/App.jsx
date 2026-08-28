@@ -7,6 +7,7 @@ import Layout from './components/layout/Layout'
 
 import Login from './pages/auth/Login'
 import ForgotPassword from './pages/auth/ForgotPassword'
+import ResetPassword from './pages/auth/ResetPassword'
 import SetPassword from './pages/auth/SetPassword'
 import Onboarding from './pages/onboarding/Onboarding'
 import Legal from './pages/Legal'
@@ -60,6 +61,7 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/set-password" element={<SetPassword />} />
           <Route path="/privacy" element={<Legal type="privacy" />} />
           <Route path="/terms" element={<Legal type="terms" />} />
