@@ -252,6 +252,7 @@ def create_school():
 
         _create_default_categories(db, school.id)
 
+        pending_invites = []
         for invite in invitations:
             invite_email = invite.get("email", "").strip().lower()
             role = invite.get("role", "Teacher")
@@ -273,12 +274,17 @@ def create_school():
                         created_at=time.time(),
                     )
                     db.add(invited_user)
-                    send_invite_email(invite_email, role, temp_password, school.name)
+                    pending_invites.append((invite_email, role, temp_password))
 
         od_connected = any(c.get("id") == "onedrive" and c.get("status") == "Connected"
                           for c in connectors)
 
         db.commit()
+        for invite_email, role, temp_password in pending_invites:
+            try:
+                send_invite_email(invite_email, role, temp_password, school.name)
+            except Exception:
+                pass
 
         return jsonify({
             "success": True,
@@ -340,10 +346,15 @@ def create_invitations():
                 created_at=time.time(),
             )
             db.add(user)
-            send_invite_email(email, role, temp_password, "")
-            created.append({"email": email, "role": role, "status": "invited"})
+            created.append({"email": email, "role": role, "status": "invited", "_pw": temp_password})
 
         db.commit()
+        for c in created:
+            if "_pw" in c:
+                try:
+                    send_invite_email(c["email"], c["role"], c.pop("_pw"), "")
+                except Exception:
+                    pass
         return jsonify({"success": True, "invitations": created})
     finally:
         db.close()
@@ -416,17 +427,19 @@ def resend_invitation(email):
         ).first()
         if not user:
             return jsonify({"error": "Invitation not found"}), 404
-        
-        # Generate new temp password
         new_password = secrets.token_urlsafe(10)
         user.password_hash = generate_password_hash(new_password)
         user.invited_at = time.time()
         db.commit()
-        
+        school_name = ""
+        if user.school_id:
+            sch = db.query(School).filter(School.id == user.school_id).first()
+            if sch:
+                school_name = sch.name
+        send_invite_email(email.lower(), user.role, new_password, school_name)
         return jsonify({
             "success": True,
             "message": "Invitation resent",
-            "temp_password": new_password,  # In real app, send via email
         })
     finally:
         db.close()

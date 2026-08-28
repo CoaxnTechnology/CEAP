@@ -84,20 +84,23 @@ def mark_as_read(notification_id: str, user_email: str) -> bool:
 
 
 def send_email(to: str, subject: str, body: str) -> bool:
-    if not OfficeConfig.SMTP_PASS:
+    if not OfficeConfig.NOTIFICATIONS_ENABLED:
+        return False
+    if not OfficeConfig.SMTP_PASS or not OfficeConfig.SMTP_USER or not OfficeConfig.SMTP_HOST:
         return False
     try:
         msg = MIMEText(body)
         msg["Subject"] = subject
         msg["From"] = OfficeConfig.SMTP_FROM
         msg["To"] = to
-
         with smtplib.SMTP(OfficeConfig.SMTP_HOST, OfficeConfig.SMTP_PORT, timeout=10) as server:
             server.starttls()
             server.login(OfficeConfig.SMTP_USER, OfficeConfig.SMTP_PASS)
             server.send_message(msg)
         return True
-    except Exception:
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning("send_email failed to %s: %s", to, e)
         return False
 
 
@@ -111,13 +114,17 @@ def send_invite_email(email: str, role: str, temp_password: str, school_name: st
 
 
 def _mirror_notification_email(mapper, connection, target):
-    # ponytail: only the DB notification; HR leave approval emails ride on
-    # the existing Notification rows and need no separate hook
-    send_email(
-        target.user_email,
-        target.title or "CEAP notification",
-        target.message or "",
-    )
+    # ponytail: don't block DB commit on SMTP; fail silently but log
+    try:
+        if not OfficeConfig.NOTIFICATIONS_ENABLED:
+            return
+        send_email(
+            target.user_email,
+            target.title or "CEAP notification",
+            target.message or "",
+        )
+    except Exception:
+        pass
 
 
 event.listen(Notification, "after_insert", _mirror_notification_email)
