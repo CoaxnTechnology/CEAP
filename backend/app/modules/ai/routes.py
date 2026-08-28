@@ -815,7 +815,7 @@ def api_chat():
                     name_words = re.findall(r"[a-z0-9]+", name.replace("_", " ").replace(".", " "))
                     name_norm = name.replace("_","").replace(".","")
                     # ponytail: any typo — paysip -> payslip, bankstatment -> bank_statement (thresh 0.7)
-                    if any(tok in name or difflib.SequenceMatcher(None, tok.replace("_",""), name_norm).ratio() >= 0.7 or any(difflib.SequenceMatcher(None, tok, w).ratio() >= 0.75 for w in name_words) for tok in tokens):
+                    if tokens and all(tok in name or difflib.SequenceMatcher(None, tok.replace("_",""), name_norm).ratio() >= 0.7 or any(difflib.SequenceMatcher(None, tok, w).ratio() >= 0.75 for w in name_words) for tok in tokens):
                         if fid not in generic_ids:
                             generic_ids.append(fid)
             if not generic_ids and "files" in ql:
@@ -1268,7 +1268,7 @@ def api_chat_stream():
                     name = (entry.get("name") or "").lower()
                     name_words = re.findall(r"[a-z0-9]+", name.replace("_", " ").replace(".", " "))
                     name_norm = name.replace("_","").replace(".","")
-                    if any(tok in name or difflib.SequenceMatcher(None, tok.replace("_",""), name_norm).ratio() >= 0.7 or any(difflib.SequenceMatcher(None, tok, w).ratio() >= 0.75 for w in name_words) for tok in tokens):
+                    if tokens and all(tok in name or difflib.SequenceMatcher(None, tok.replace("_",""), name_norm).ratio() >= 0.7 or any(difflib.SequenceMatcher(None, tok, w).ratio() >= 0.75 for w in name_words) for tok in tokens):
                         if fid not in generic_ids:
                             generic_ids.append(fid)
             if not generic_ids and "files" in ql:
