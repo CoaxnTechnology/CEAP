@@ -711,7 +711,7 @@ def api_chat():
     # so the ambiguity prompt doesn't loop. Only rewrite the question when the
     # reply is selection-shaped (short, no '?'); a real question like "what's
     # in Shipments.csv?" just scopes to that file as-is.
-    if not file_ids:
+    if not file_ids and mode != "file":
         selected = _resolve_file_selection(question, registry, indexed_file_ids)
         if selected:
             file_ids = [selected]
@@ -719,7 +719,7 @@ def api_chat():
                 pending = _recover_pending_question(user_key, chat_session["session_id"])
                 if pending:
                     question = pending
-        elif len(question.strip()) <= 60 and not _wants_all_documents(question) and not _is_aggregation_question(question):
+        elif mode != "file" and len(question.strip()) <= 60 and not _wants_all_documents(question) and not _is_aggregation_question(question):
             ctx = _recover_context_file(user_key, chat_session["session_id"])
             if ctx and ctx in indexed_file_ids:
                 deictic = bool(re.search(r"\b(this|that|the|above)\s+(file|document|spreadsheet|sheet)\b", question.lower()))
@@ -791,10 +791,7 @@ def api_chat():
                             generic_ids.append(fid)
             if not generic_ids:
                 import difflib, re as _re
-                current_app.logger.info(f"DEBUG: generic_ids empty, ql={ql}")
                 m = _re.search(r"(\w+)\s+files?", ql)
-                if m:
-                    current_app.logger.info(f"DEBUG: prefix match: {m.group(1)}")
                 if m:
                     prefix = m.group(1)
                     # skip generic trigger words
@@ -806,7 +803,7 @@ def api_chat():
                             # ponytail: typo tolerant prefix — bankstatment -> bank_statement (any typo, thresh 0.7 for missing chars)
                             name_norm = name.replace("_","").replace(".","")
                             prefix_norm = prefix.replace("_","")
-                            if prefix in name or difflib.SequenceMatcher(None, prefix_norm, name_norm).ratio() >= 0.7 or any(difflib.SequenceMatcher(None, prefix, w).ratio() >= 0.8 for w in _re.findall(r"[a-z0-9_]+", name)):
+                            if prefix in name or difflib.SequenceMatcher(None, prefix_norm, name_norm).ratio() >= 0.7 or any(difflib.SequenceMatcher(None, prefix, w).ratio() >= 0.75 for w in _re.findall(r"[a-z0-9]+", name.replace("_", " "))):
                                 generic_ids.append(fid)
             if not generic_ids:
                 import difflib
@@ -815,14 +812,28 @@ def api_chat():
                     if fid not in indexed_file_ids:
                         continue
                     name = (entry.get("name") or "").lower()
-                    name_words = re.findall(r"[a-z0-9_]+", name)
+                    name_words = re.findall(r"[a-z0-9]+", name.replace("_", " ").replace(".", " "))
                     name_norm = name.replace("_","").replace(".","")
                     # ponytail: any typo — paysip -> payslip, bankstatment -> bank_statement (thresh 0.7)
-                    if any(tok in name or difflib.SequenceMatcher(None, tok.replace("_",""), name_norm).ratio() >= 0.7 or any(difflib.SequenceMatcher(None, tok, w).ratio() >= 0.8 for w in name_words) for tok in tokens):
+                    if any(tok in name or difflib.SequenceMatcher(None, tok.replace("_",""), name_norm).ratio() >= 0.7 or any(difflib.SequenceMatcher(None, tok, w).ratio() >= 0.75 for w in name_words) for tok in tokens):
                         if fid not in generic_ids:
                             generic_ids.append(fid)
             if not generic_ids and "files" in ql:
                 generic_ids = list(indexed_file_ids)
+            # ponytail: filter by requested extension (pdf/docx) if mentioned — e.g. "pdf of bankstatmenet"
+            req_ext = None
+            if re.search(r"\.pdf\b", ql) or re.search(r"\bpdfs?\b", ql):
+                req_ext = ".pdf"
+            elif re.search(r"\.docx\b", ql) or re.search(r"\bdocx\b", ql):
+                req_ext = ".docx"
+            elif re.search(r"\.doc\b", ql) or re.search(r"\bdoc\b", ql):
+                req_ext = ".doc"
+            elif re.search(r"\.xlsx\b", ql) or re.search(r"\bxlsx\b", ql):
+                req_ext = ".xlsx"
+            if req_ext and generic_ids:
+                filtered = [fid for fid in generic_ids if (registry.get(fid, {}).get("name") or "").lower().endswith(req_ext)]
+                if filtered:
+                    generic_ids = filtered
             if generic_ids:
                 # limit to 30 to avoid huge response
                 file_ids = generic_ids[:30]
@@ -1157,7 +1168,7 @@ def api_chat_stream():
     # so the ambiguity prompt doesn't loop. Only rewrite the question when the
     # reply is selection-shaped (short, no '?'); a real question like "what's
     # in Shipments.csv?" just scopes to that file as-is.
-    if not file_ids:
+    if not file_ids and mode != "file":
         selected = _resolve_file_selection(question, registry, indexed_file_ids)
         if selected:
             file_ids = [selected]
@@ -1165,7 +1176,7 @@ def api_chat_stream():
                 pending = _recover_pending_question(user_key, chat_session["session_id"])
                 if pending:
                     question = pending
-        elif len(question.strip()) <= 60 and not _wants_all_documents(question) and not _is_aggregation_question(question):
+        elif mode != "file" and len(question.strip()) <= 60 and not _wants_all_documents(question) and not _is_aggregation_question(question):
             ctx = _recover_context_file(user_key, chat_session["session_id"])
             if ctx and ctx in indexed_file_ids:
                 deictic = bool(re.search(r"\b(this|that|the|above)\s+(file|document|spreadsheet|sheet)\b", question.lower()))
@@ -1236,10 +1247,7 @@ def api_chat_stream():
                             generic_ids.append(fid)
             if not generic_ids:
                 import difflib, re as _re
-                current_app.logger.info(f"DEBUG: generic_ids empty, ql={ql}")
                 m = _re.search(r"(\w+)\s+files?", ql)
-                if m:
-                    current_app.logger.info(f"DEBUG: prefix match: {m.group(1)}")
                 if m:
                     prefix = m.group(1)
                     if prefix not in ("give","send","this","that","the","all","my","please","me"):
@@ -1249,7 +1257,7 @@ def api_chat_stream():
                             name = (entry.get("name") or "").lower()
                             name_norm = name.replace("_","")
                             prefix_norm = prefix.replace("_","")
-                            if prefix in name or difflib.SequenceMatcher(None, prefix_norm, name_norm).ratio() >= 0.7 or any(difflib.SequenceMatcher(None, prefix, w).ratio() >= 0.8 for w in _re.findall(r"[a-z0-9_]+", name)):
+                            if prefix in name or difflib.SequenceMatcher(None, prefix_norm, name_norm).ratio() >= 0.7 or any(difflib.SequenceMatcher(None, prefix, w).ratio() >= 0.75 for w in _re.findall(r"[a-z0-9]+", name.replace("_", " "))):
                                 generic_ids.append(fid)
             if not generic_ids:
                 import difflib
@@ -1258,13 +1266,27 @@ def api_chat_stream():
                     if fid not in indexed_file_ids:
                         continue
                     name = (entry.get("name") or "").lower()
-                    name_words = re.findall(r"[a-z0-9_]+", name)
+                    name_words = re.findall(r"[a-z0-9]+", name.replace("_", " ").replace(".", " "))
                     name_norm = name.replace("_","").replace(".","")
-                    if any(tok in name or difflib.SequenceMatcher(None, tok.replace("_",""), name_norm).ratio() >= 0.7 or any(difflib.SequenceMatcher(None, tok, w).ratio() >= 0.8 for w in name_words) for tok in tokens):
+                    if any(tok in name or difflib.SequenceMatcher(None, tok.replace("_",""), name_norm).ratio() >= 0.7 or any(difflib.SequenceMatcher(None, tok, w).ratio() >= 0.75 for w in name_words) for tok in tokens):
                         if fid not in generic_ids:
                             generic_ids.append(fid)
             if not generic_ids and "files" in ql:
                 generic_ids = list(indexed_file_ids)
+            # ponytail: filter by requested extension (pdf/docx) if mentioned — e.g. "pdf of bankstatmenet"
+            req_ext = None
+            if re.search(r"\.pdf\b", ql) or re.search(r"\bpdfs?\b", ql):
+                req_ext = ".pdf"
+            elif re.search(r"\.docx\b", ql) or re.search(r"\bdocx\b", ql):
+                req_ext = ".docx"
+            elif re.search(r"\.doc\b", ql) or re.search(r"\bdoc\b", ql):
+                req_ext = ".doc"
+            elif re.search(r"\.xlsx\b", ql) or re.search(r"\bxlsx\b", ql):
+                req_ext = ".xlsx"
+            if req_ext and generic_ids:
+                filtered = [fid for fid in generic_ids if (registry.get(fid, {}).get("name") or "").lower().endswith(req_ext)]
+                if filtered:
+                    generic_ids = filtered
             if generic_ids:
                 file_ids = generic_ids[:30]
         if file_ids:
