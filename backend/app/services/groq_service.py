@@ -4,6 +4,8 @@ import json
 import random
 import time
 
+import re
+
 import groq
 from groq import APIConnectionError, APIError, APIStatusError
 
@@ -227,7 +229,25 @@ def generate_answer_with_tools(
                     pass
             if attempt == 3:
                 raise GeminiServiceError(_redact_key(str(exc))) from exc
-            time.sleep(2 * (attempt + 1))
+            # ponytail: respect Groq Retry-After (message "try again in 16.2s" or header) — fixed 2/4/6s was too short for 16-41s waits
+            retry_after = 2 * (attempt + 1)
+            try:
+                msg = str(exc)
+                m = re.search(r"try again in ([0-9.]+)s", msg, re.IGNORECASE)
+                if m:
+                    retry_after = float(m.group(1)) + 1
+                # also check response header if present
+                resp = getattr(exc, "response", None) or getattr(exc, "_response", None)
+                hdr = None
+                if resp is not None:
+                    hdr = getattr(resp, "headers", None) or (resp.get("headers") if isinstance(resp, dict) else None)
+                if hdr:
+                    hval = hdr.get("retry-after") or hdr.get("Retry-After")
+                    if hval:
+                        retry_after = max(retry_after, float(hval) + 1)
+            except Exception:
+                pass
+            time.sleep(min(retry_after, 30))
             continue
 
         msg = response.choices[0].message
@@ -268,6 +288,20 @@ def generate_answer_with_tools(
                     "function": {"name": fn.name, "arguments": fn.arguments},
                 }
             )
+
+        # ponytail: overview tools are direct data — no need for second LLM synthesis (saves 50% TPM, immune to 429)
+        _overview_tools = {"get_hr_overview", "get_finance_overview", "get_compliance_status", "get_executive_briefing", "get_admissions_overview", "get_pending_approvals"}
+        if all(getattr(tc.function, "name", "") in _overview_tools for tc in msg.tool_calls):
+            import json as _json
+            if len(executed_tools) == 1:
+                _data = executed_tools[0]["result"]
+                _payload = _data.get("data", _data) if isinstance(_data, dict) else _data
+                _text = _json.dumps(_payload, indent=2) if isinstance(_payload, dict) else str(_payload)
+                if not _text or _text == "{}":
+                    _text = f"Overview for {executed_tools[0]['name']} is ready."
+                return {"text": _text, "tool_calls": executed_tools}
+            _combined = "\n".join(_json.dumps(t["result"], indent=2) if isinstance(t["result"], dict) else str(t["result"]) for t in executed_tools)
+            return {"text": _combined, "tool_calls": executed_tools}
 
         messages.append(
             {"role": "assistant", "content": None, "tool_calls": assistant_tool_calls}

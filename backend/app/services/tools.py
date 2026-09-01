@@ -109,7 +109,7 @@ HR_TOOLS = [
     },
     {
         "name": "search_hr_policy",
-        "description": "Search HR policy documents for answers to policy questions",
+        "description": "Search HR policy docs",
         "parameters": {
             "type": "object",
             "properties": {
@@ -362,7 +362,7 @@ ADMIN_TOOLS = [
     },
     {
         "name": "list_assets",
-        "description": "List assets filtered by status or type",
+        "description": "List assets by status/type",
         "parameters": {
             "type": "object",
             "properties": {
@@ -381,7 +381,7 @@ ADMIN_TOOLS = [
     },
     {
         "name": "add_asset",
-        "description": "Add a new asset to the inventory",
+        "description": "Add asset to inventory",
         "parameters": {
             "type": "object",
             "properties": {
@@ -408,7 +408,7 @@ ADMIN_TOOLS = [
     },
     {
         "name": "check_inventory",
-        "description": "Check office supply inventory levels",
+        "description": "Check supply inventory",
         "parameters": {
             "type": "object",
             "properties": {
@@ -426,7 +426,7 @@ ADMIN_TOOLS = [
     },
     {
         "name": "create_ticket",
-        "description": "Create a support or service ticket",
+        "description": "Create support ticket",
         "parameters": {
             "type": "object",
             "properties": {
@@ -448,7 +448,7 @@ ADMIN_TOOLS = [
     },
     {
         "name": "list_tickets",
-        "description": "List tickets for the current user",
+        "description": "List user tickets",
         "parameters": {
             "type": "object",
             "properties": {
@@ -513,7 +513,7 @@ HR_TOOLS_EXTRA = [
     },
     {
         "name": "generate_hr_report",
-        "description": "Generate an HR report summarizing employee data, leave usage, attendance",
+        "description": "Generate HR report (employee/leave/attendance)",
         "parameters": {
             "type": "object",
             "properties": {
@@ -532,7 +532,7 @@ HR_TOOLS_EXTRA = [
     },
     {
         "name": "list_employee_documents",
-        "description": "List employee-related documents indexed in the system (contracts, NDAs, etc.)",
+        "description": "List employee docs (contracts, NDAs)",
         "parameters": {
             "type": "object",
             "properties": {
@@ -553,7 +553,7 @@ HR_TOOLS_EXTRA = [
 ACCOUNTING_TOOLS_EXTRA = [
     {
         "name": "track_payments",
-        "description": "Track payment status for invoices. Shows all payments and their status.",
+        "description": "Track invoice payments",
         "parameters": {
             "type": "object",
             "properties": {
@@ -572,7 +572,7 @@ ACCOUNTING_TOOLS_EXTRA = [
     },
     {
         "name": "reconcile_vendor_statement",
-        "description": "Reconcile a vendor statement against recorded invoices to find discrepancies",
+        "description": "Reconcile vendor statement vs invoices",
         "parameters": {
             "type": "object",
             "properties": {
@@ -587,7 +587,7 @@ ACCOUNTING_TOOLS_EXTRA = [
     },
     {
         "name": "create_accounting_entry",
-        "description": "Create a double-entry accounting entry (debit/credit)",
+        "description": "Create accounting entry (debit/credit)",
         "parameters": {
             "type": "object",
             "properties": {
@@ -603,7 +603,7 @@ ACCOUNTING_TOOLS_EXTRA = [
     },
     {
         "name": "add_to_audit_storage",
-        "description": "Store a document in audit-ready storage with metadata tags",
+        "description": "Store doc in audit storage",
         "parameters": {
             "type": "object",
             "properties": {
@@ -625,7 +625,7 @@ ACCOUNTING_TOOLS_EXTRA = [
 ADMIN_TOOLS_EXTRA = [
     {
         "name": "file_document",
-        "description": "File and categorize a document for easy retrieval later",
+        "description": "File doc for retrieval",
         "parameters": {
             "type": "object",
             "properties": {
@@ -646,7 +646,7 @@ ADMIN_TOOLS_EXTRA = [
     },
     {
         "name": "generate_admin_report",
-        "description": "Generate an administrative report summarizing assets, tickets, supplies, and meetings",
+        "description": "Admin report: assets/tickets/supplies/meetings",
         "parameters": {
             "type": "object",
             "properties": {
@@ -677,7 +677,7 @@ SCHOOL_TOOLS = [
     },
     {
         "name": "search_school_policy",
-        "description": "Search school policy documents for answers to policy questions",
+        "description": "Search school policy docs",
         "parameters": {
             "type": "object",
             "properties": {
@@ -688,7 +688,7 @@ SCHOOL_TOOLS = [
     },
     {
         "name": "get_academic_calendar",
-        "description": "Get academic calendar information including term dates, holidays, and events",
+        "description": "Academic calendar: terms, holidays, events",
         "parameters": {
             "type": "object",
             "properties": {
@@ -740,27 +740,27 @@ SCHOOL_TOOLS = [
 OVERVIEW_TOOLS = [
     {
         "name": "get_hr_overview",
-        "description": "Get live HR overview: headcount, present/on-leave staff, open roles, leave types, pending leave requests",
+        "description": "HR overview: headcount, leave, open roles",
         "parameters": {"type": "object", "properties": {}},
     },
     {
         "name": "get_finance_overview",
-        "description": "Get live finance overview: MTD collections vs target, outstanding fees, predicted defaulters, scholarships",
+        "description": "Finance overview: collections, outstanding, defaulters",
         "parameters": {"type": "object", "properties": {}},
     },
     {
         "name": "get_admissions_overview",
-        "description": "Get live admissions pipeline: applications by stage (Applied/Interview/Offer/Enrolled), seats filled, conversion",
+        "description": "Admissions pipeline by stage",
         "parameters": {"type": "object", "properties": {}},
     },
     {
         "name": "get_compliance_status",
-        "description": "Get live compliance readiness: evidence status counts (available/expiring/missing) across frameworks",
+        "description": "Compliance readiness counts",
         "parameters": {"type": "object", "properties": {}},
     },
     {
         "name": "get_executive_briefing",
-        "description": "Get cross-module executive briefing: attendance, revenue MTD vs target, compliance readiness, pending approvals",
+        "description": "Executive briefing: attendance, revenue, compliance",
         "parameters": {"type": "object", "properties": {}},
     },
 ]
@@ -768,7 +768,7 @@ OVERVIEW_TOOLS = [
 SPREADSHEET_TOOLS = [
     {
         "name": "get_spreadsheet_stats",
-        "description": "Get EXACT counts/statistics from an uploaded spreadsheet (xlsx/xls/csv). Pass the column name (from the list of columns the tool returns) to get per-value counts. Use this for any 'how many', 'count', 'which X most', 'average' question about uploaded data — never guess counts from documents.",
+        "description": "Exact counts from a spreadsheet. Use for any count/how-many question — never guess.",
         "parameters": {
             "type": "object",
             "properties": {
@@ -793,16 +793,16 @@ TOOL_NAME_MAP = {t["name"]: t for t in ALL_TOOLS}
 # all 44 schemas on every LLM call. Unmapped contexts fall back to ALL_TOOLS.
 _OVERVIEW = {t["name"]: t for t in OVERVIEW_TOOLS}
 _TOOL_GROUPS = {
-    "hr": HR_TOOLS + HR_TOOLS_EXTRA + [_OVERVIEW["get_hr_overview"], _OVERVIEW["get_executive_briefing"]],
-    "finance": ACCOUNTING_TOOLS + ACCOUNTING_TOOLS_EXTRA + [_OVERVIEW["get_finance_overview"], _OVERVIEW["get_executive_briefing"]],
-    "accounting": ACCOUNTING_TOOLS + ACCOUNTING_TOOLS_EXTRA + [_OVERVIEW["get_finance_overview"]],
-    "admin": ADMIN_TOOLS + ADMIN_TOOLS_EXTRA,
-    "academic": SCHOOL_TOOLS + HR_TOOLS + HR_TOOLS_EXTRA + [_OVERVIEW["get_admissions_overview"]],
-    "executive": SCHOOL_TOOLS + ACCOUNTING_TOOLS + list(_OVERVIEW.values()),
-    "students": SCHOOL_TOOLS,
-    "admissions": SCHOOL_TOOLS + [_OVERVIEW["get_admissions_overview"]],
-    "compliance": ADMIN_TOOLS + [_OVERVIEW["get_compliance_status"]],
-    "knowledge": [],
+    "hr": HR_TOOLS + HR_TOOLS_EXTRA + [_OVERVIEW["get_hr_overview"], _OVERVIEW["get_executive_briefing"]] + SPREADSHEET_TOOLS,
+    "finance": ACCOUNTING_TOOLS + ACCOUNTING_TOOLS_EXTRA + [_OVERVIEW["get_finance_overview"], _OVERVIEW["get_executive_briefing"]] + SPREADSHEET_TOOLS,
+    "accounting": ACCOUNTING_TOOLS + ACCOUNTING_TOOLS_EXTRA + [_OVERVIEW["get_finance_overview"]] + SPREADSHEET_TOOLS,
+    "admin": ADMIN_TOOLS + ADMIN_TOOLS_EXTRA + SPREADSHEET_TOOLS,
+    "academic": SCHOOL_TOOLS + HR_TOOLS + HR_TOOLS_EXTRA + [_OVERVIEW["get_admissions_overview"]] + SPREADSHEET_TOOLS,
+    "executive": SCHOOL_TOOLS + ACCOUNTING_TOOLS + list(_OVERVIEW.values()) + SPREADSHEET_TOOLS,
+    "students": SCHOOL_TOOLS + SPREADSHEET_TOOLS,
+    "admissions": SCHOOL_TOOLS + [_OVERVIEW["get_admissions_overview"]] + SPREADSHEET_TOOLS,
+    "compliance": ADMIN_TOOLS + [_OVERVIEW["get_compliance_status"]] + SPREADSHEET_TOOLS,
+    "knowledge": SPREADSHEET_TOOLS,
 }
 
 

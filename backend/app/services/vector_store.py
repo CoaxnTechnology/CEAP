@@ -230,10 +230,7 @@ class ChromaStore:
             return []
 
         if source_filter is not None and len(source_filter) > 1:
-            # ponytail: per-file retrieval round-robin — one $in search clusters
-            # on the most similar file, so multi-select answers drew from a
-            # single document. Interleave keeps every selected file represented.
-            # If context bloat becomes an issue, drop per-file k instead.
+            # ponytail: per-file round-robin — cap total to top_k, not len*per_k (was 58*2=116 → 20k tokens → 413)
             per_k = max(2, -(-top_k // len(source_filter)))
             pools = [
                 self.search(query, top_k=per_k, source_filter=[fid])
@@ -244,7 +241,9 @@ class ChromaStore:
                 for pool in pools:
                     if i < len(pool):
                         merged.append(pool[i])
-            return merged
+                        if len(merged) >= top_k:
+                            return merged[:top_k]
+            return merged[:top_k]
 
         candidate_k = min(top_k * 6, col.count())
         where = {"file_id": {"$in": source_filter}} if source_filter else None

@@ -6,24 +6,30 @@ v1: keyword + department rules, no extra LLM call.
 import re
 
 DOMAIN_KEYWORDS = {
-    "hr": ["leave", "attendance", "staff", "employee", "hiring", "onboard", "payroll", "payslip", "contract", "hr "],
-    "finance": ["fee", "invoice", "expense", "collection", "payment", "waiver", "scholarship", "budget", "arrears", "outstanding", "finance"],
+    "hr": ["leave", "attendance", "staff", "employee", "hiring", "onboard", "payroll", "payslip", "contract", "hr ", "activities", "activity", "orientation", "bonus", "training", "hr activities"],
+    "finance": ["fee", "invoice", "expense", "collection", "payment", "waiver", "scholarship", "budget", "arrears", "outstanding", "finance", "cashflow", "bank statement", "bank_statement", "cash flow"],
     "admissions": ["admission", "applicant", "application", "enroll", "interview", "inquiry", "seat", "pipeline"],
     "compliance": ["compliance", "evidence", "audit", "certificate", "regulation", "license", "inspection", "compliance readiness"],
-    "executive": ["kpi", "overview", "target", "revenue", "mtd", "readiness", "high-risk", "briefing", "dashboard", "summary"],
+    "executive": ["kpi", "overview", "target", "revenue", "mtd", "readiness", "high-risk", "briefing", "dashboard"],
     "academic": ["assessment", "exam", "coverage", "curriculum", "academic", "class coverage", "timetable", "report card", "syllabus"],
     "workflows": ["workflow", "approval", "approver", "stage"],
     "knowledge": ["faq", "sop", "knowledge card", "knowledge base", "how do i"],
 }
 
 POLICY_KEYWORDS = ["policy", "who approves", "approval chain", "allowed", "entitlement", "max days", "limit", "rules_json"]
-DOCUMENT_KEYWORDS = ["summarize", "summarise", "what does", "what is the policy", "circular", "document", "pdf", "file", "contract", "excerpt"]
+DOCUMENT_KEYWORDS = ["summarize", "summarise", "summary", "what does", "what is the policy", "circular", "document", "pdf", "file", "contract", "excerpt"]
 ACTION_KEYWORDS = ["apply", "create", "submit", "request", "approve", "reject", "book", "register", "schedule", "cancel"]
 
 
 def classify(question: str, department: str = "") -> dict:
     """Classify a question into domains, intent, and whether RAG is needed."""
     q = (question or "").lower()
+    # ponytail: alias cashflow -> bank_statement for consistent file search
+    q = q.replace("cashflow", "bank_statement").replace("cash flow", "bank_statement")
+
+    # HR activities summary should be consistent — force to HR overview, not RAG doc search
+    if "hr activities" in q or "hr activity" in q:
+        return {"domains": ["hr"], "intent": "status", "needs_rag": False, "needs_tools": ["hr"]}
 
     domains = set()
     for domain, keywords in DOMAIN_KEYWORDS.items():
